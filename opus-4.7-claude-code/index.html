@@ -1,0 +1,1641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Greenwood Nursery — 3D Walkthrough</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: #87ceeb; color: #fff; }
+  canvas { display: block; }
+
+  #hud {
+    position: absolute; top: 14px; left: 14px;
+    background: rgba(10, 20, 15, 0.55); backdrop-filter: blur(6px);
+    padding: 10px 14px; border-radius: 8px; font-size: 13px;
+    border: 1px solid rgba(255,255,255,0.12); z-index: 10; pointer-events: none;
+  }
+  #hud b { color: #a9dca0; }
+  #hud small { opacity: 0.8; }
+
+  #crosshair {
+    position: absolute; top: 50%; left: 50%;
+    width: 14px; height: 14px; margin: -7px 0 0 -7px;
+    border: 2px solid rgba(255,255,255,0.85);
+    border-radius: 50%;
+    pointer-events: none; z-index: 5;
+    box-shadow: 0 0 4px rgba(0,0,0,0.4);
+  }
+  #crosshair.hot { border-color: #ffd35a; transform: scale(1.4); transition: transform 0.1s; box-shadow: 0 0 8px rgba(255, 211, 90, 0.8); }
+
+  #interact-tip {
+    position: absolute; top: 54%; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.65); padding: 6px 12px;
+    border-radius: 4px; font-size: 13px; display: none; z-index: 6;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+
+  #popup {
+    position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+    background: linear-gradient(145deg, rgba(20,35,25,0.95), rgba(15,25,20,0.95));
+    padding: 18px 22px; border-radius: 10px; max-width: 440px;
+    border: 1px solid rgba(160, 220, 160, 0.3); display: none; z-index: 20;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+    animation: slideUp 0.25s ease;
+  }
+  @keyframes slideUp { from { opacity: 0; transform: translate(-50%, 20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  #popup h3 { margin: 0 0 8px; color: #b5e2aa; font-size: 17px; letter-spacing: 0.5px; }
+  #popup p { margin: 0; line-height: 1.5; font-size: 14px; opacity: 0.92; }
+  #popup .close { position: absolute; top: 6px; right: 10px; cursor: pointer; opacity: 0.6; font-size: 18px; }
+
+  #overlay {
+    position: absolute; inset: 0; z-index: 50;
+    background: radial-gradient(ellipse at center, rgba(20,50,30,0.85), rgba(5,15,10,0.97));
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; text-align: center; padding: 20px;
+    transition: opacity 0.6s;
+  }
+  #overlay.hide { opacity: 0; pointer-events: none; }
+  #overlay h1 { font-size: 54px; margin: 0 0 6px; color: #c9efb8; letter-spacing: 2px; text-shadow: 0 2px 10px rgba(0,0,0,0.6); }
+  #overlay .sub { opacity: 0.85; margin-bottom: 24px; font-size: 16px; }
+  #overlay .controls {
+    display: grid; grid-template-columns: auto auto; gap: 6px 18px;
+    background: rgba(0,0,0,0.3); padding: 16px 24px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1); margin-bottom: 26px; font-size: 14px;
+  }
+  #overlay .controls b { color: #ffd35a; font-family: ui-monospace, SFMono-Regular, monospace; text-align: right; }
+  #overlay button {
+    padding: 14px 34px; font-size: 16px; letter-spacing: 1px;
+    background: linear-gradient(#4a8a3a, #2e6625); color: white; border: 0;
+    border-radius: 6px; cursor: pointer; font-weight: 600;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+  }
+  #overlay button:hover { filter: brightness(1.15); }
+
+  #inventory {
+    position: absolute; bottom: 14px; right: 14px; z-index: 10;
+    background: rgba(10,20,15,0.55); backdrop-filter: blur(6px);
+    padding: 8px 12px; border-radius: 8px; font-size: 12px;
+    border: 1px solid rgba(255,255,255,0.12); display: none;
+  }
+  #inventory b { color: #ffd35a; }
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <b>🌿 Greenwood Nursery</b><br>
+  <small><b>WASD</b> walk · <b>Mouse</b> look · <b>Shift</b> run · <b>Click</b> interact · <b>ESC</b> release mouse</small>
+</div>
+<div id="crosshair"></div>
+<div id="interact-tip">Click to interact</div>
+<div id="popup"><span class="close">×</span><h3></h3><p></p></div>
+<div id="inventory">Carrying: <b id="inv-name"></b> <small>(click to drop)</small></div>
+
+<div id="overlay">
+  <h1>GREENWOOD NURSERY</h1>
+  <div class="sub">Explore four themed greenhouses — Desert, Jungle, Houseplants, and Bonsai.</div>
+  <div class="controls">
+    <b>WASD</b><span>move</span>
+    <b>Mouse</b><span>look around</span>
+    <b>Shift</b><span>run</span>
+    <b>Space</b><span>jump</span>
+    <b>Click</b><span>interact with plants, signs, doors</span>
+    <b>ESC</b><span>release mouse</span>
+  </div>
+  <button id="startBtn">Enter the Nursery</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+/* =========================================================
+   SCENE + RENDERER
+   ========================================================= */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8cc0e6);
+scene.fog = new THREE.Fog(0xa8ccde, 60, 220);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth / innerHeight, 0.1, 600);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* =========================================================
+   LIGHTING
+   ========================================================= */
+scene.add(new THREE.HemisphereLight(0xbadcf0, 0x4a5a3a, 0.7));
+const sun = new THREE.DirectionalLight(0xfff6e0, 1.3);
+sun.position.set(40, 70, 25);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 220;
+sun.shadow.camera.left = -80;
+sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80;
+sun.shadow.camera.bottom = -80;
+sun.shadow.bias = -0.0004;
+scene.add(sun);
+
+/* =========================================================
+   MATERIALS
+   ========================================================= */
+const mat = {
+  grass:   new THREE.MeshStandardMaterial({ color: 0x4f7a3f, roughness: 0.95 }),
+  gravel:  new THREE.MeshStandardMaterial({ color: 0xbcae92, roughness: 1.0 }),
+  sand:    new THREE.MeshStandardMaterial({ color: 0xd6c18d, roughness: 1.0 }),
+  dirt:    new THREE.MeshStandardMaterial({ color: 0x3d2a1a, roughness: 1.0 }),
+  wood:    new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 0.85 }),
+  woodL:   new THREE.MeshStandardMaterial({ color: 0x8c5a2b, roughness: 0.85 }),
+  darkWd:  new THREE.MeshStandardMaterial({ color: 0x3d2512, roughness: 0.9 }),
+  glass:   new THREE.MeshStandardMaterial({
+    color: 0xc8e0d8, metalness: 0.05, roughness: 0.18,
+    transparent: true, opacity: 0.25,
+    side: THREE.DoubleSide, depthWrite: false
+  }),
+  cacGreen:new THREE.MeshStandardMaterial({ color: 0x5f8c3f, roughness: 0.8 }),
+  cacDark: new THREE.MeshStandardMaterial({ color: 0x486f30, roughness: 0.8 }),
+  jungle:  new THREE.MeshStandardMaterial({ color: 0x2a6a2a, roughness: 0.9, side: THREE.DoubleSide }),
+  jungleL: new THREE.MeshStandardMaterial({ color: 0x3e8a3e, roughness: 0.85, side: THREE.DoubleSide }),
+  leaf:    new THREE.MeshStandardMaterial({ color: 0x4ea64e, roughness: 0.8, side: THREE.DoubleSide }),
+  leafY:   new THREE.MeshStandardMaterial({ color: 0x78b34a, roughness: 0.8, side: THREE.DoubleSide }),
+  pot:     new THREE.MeshStandardMaterial({ color: 0x8c4a2b, roughness: 0.85 }),
+  potGray: new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.85 }),
+  flower:  new THREE.MeshStandardMaterial({ color: 0xdd6688, roughness: 0.6 }),
+  flowerW: new THREE.MeshStandardMaterial({ color: 0xf2f0e4, roughness: 0.6 }),
+  flowerY: new THREE.MeshStandardMaterial({ color: 0xf1cc3b, roughness: 0.6 }),
+  metal:   new THREE.MeshStandardMaterial({ color: 0x888a8c, metalness: 0.6, roughness: 0.45 }),
+  sign:    new THREE.MeshStandardMaterial({ color: 0xeee8d0, roughness: 0.7 }),
+  pineDk:  new THREE.MeshStandardMaterial({ color: 0x2a4a2a, roughness: 0.95 }),
+  bark:    new THREE.MeshStandardMaterial({ color: 0x4a3020, roughness: 1 }),
+};
+
+/* =========================================================
+   GROUND + PATHS
+   ========================================================= */
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), mat.grass);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Layout: 4 greenhouses along X axis, oriented along Z
+// Each greenhouse: 9m wide, 22m long, 4m wall, 6.5m peak
+// Centers at X = -21, -7, 7, 21   (12m apart, 3m paths between)
+const GH_W = 9, GH_L = 22, GH_H = 4, GH_PEAK = 6.5;
+const GH_CENTERS = [-21, -7, 7, 21];
+const THEMES = ['DESERT', 'JUNGLE', 'HOUSEPLANTS', 'BONSAI'];
+
+// Central front plaza & entrance path
+function addPath(w, l, x, z, m = mat.gravel) {
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(w, l), m);
+  p.rotation.x = -Math.PI / 2;
+  p.position.set(x, 0.01, z);
+  p.receiveShadow = true;
+  scene.add(p);
+  return p;
+}
+// Plaza in front of greenhouses
+addPath(66, 10, 0, -GH_L / 2 - 5);
+// Central path between greenhouses 2 and 3
+addPath(4, GH_L + 10, 0, 0);
+// Side paths between 1-2 and 3-4
+addPath(3, GH_L + 4, -14, 0);
+addPath(3, GH_L + 4, 14, 0);
+// Back cross path
+addPath(66, 3, 0, GH_L / 2 + 3);
+
+/* =========================================================
+   COLLISION WALLS (AABBs in XZ plane)
+   ========================================================= */
+const walls = []; // { minX, maxX, minZ, maxZ }
+function addWall(minX, maxX, minZ, maxZ) {
+  walls.push({ minX, maxX, minZ, maxZ });
+}
+// world perimeter
+addWall(-120, 120, -120, -119); // south
+addWall(-120, 120,  119,  120); // north
+addWall(-120, -119, -120, 120); // west
+addWall( 119,  120, -120, 120); // east
+
+/* =========================================================
+   GREENHOUSE CONSTRUCTION
+   ========================================================= */
+const interactables = []; // meshes with userData.interaction
+
+function createGreenhouseShell(cx, number, themeName) {
+  const g = new THREE.Group();
+  g.position.x = cx;
+
+  const W = GH_W, L = GH_L, H = GH_H, P = GH_PEAK;
+  const t = 0.15; // frame thickness
+
+  // --- Glass side walls ---
+  const longWallGeo = new THREE.PlaneGeometry(L, H);
+  const lw = new THREE.Mesh(longWallGeo, mat.glass);
+  lw.rotation.y = Math.PI / 2;
+  lw.position.set(-W / 2, H / 2, 0);
+  g.add(lw);
+  const rw = new THREE.Mesh(longWallGeo, mat.glass);
+  rw.rotation.y = -Math.PI / 2;
+  rw.position.set(W / 2, H / 2, 0);
+  g.add(rw);
+
+  // --- Gable end glass (with door opening on front) ---
+  // Front (z = -L/2) shape with door cutout
+  const frontShape = new THREE.Shape();
+  frontShape.moveTo(-W / 2, 0);
+  frontShape.lineTo(W / 2, 0);
+  frontShape.lineTo(W / 2, H);
+  frontShape.lineTo(0, P);
+  frontShape.lineTo(-W / 2, H);
+  frontShape.lineTo(-W / 2, 0);
+  const doorHole = new THREE.Path();
+  const dW = 1.2, dH = 2.3;
+  doorHole.moveTo(-dW, 0);
+  doorHole.lineTo(dW, 0);
+  doorHole.lineTo(dW, dH);
+  doorHole.lineTo(-dW, dH);
+  doorHole.lineTo(-dW, 0);
+  frontShape.holes.push(doorHole);
+  const frontMesh = new THREE.Mesh(new THREE.ShapeGeometry(frontShape), mat.glass);
+  frontMesh.position.z = -L / 2;
+  g.add(frontMesh);
+
+  // Back gable (no door)
+  const backShape = new THREE.Shape();
+  backShape.moveTo(-W / 2, 0);
+  backShape.lineTo(W / 2, 0);
+  backShape.lineTo(W / 2, H);
+  backShape.lineTo(0, P);
+  backShape.lineTo(-W / 2, H);
+  backShape.lineTo(-W / 2, 0);
+  const backMesh = new THREE.Mesh(new THREE.ShapeGeometry(backShape), mat.glass);
+  backMesh.position.z = L / 2;
+  backMesh.rotation.y = Math.PI;
+  g.add(backMesh);
+
+  // --- Roof planes --- built from explicit vertices for perfect alignment
+  const slope = Math.hypot(W / 2, P - H);
+  const roofAngle = Math.atan2(P - H, W / 2);
+  function makeRoofPane(p1, p2, p3, p4) {
+    const geo = new THREE.BufferGeometry();
+    const verts = new Float32Array([
+      p1.x, p1.y, p1.z,
+      p2.x, p2.y, p2.z,
+      p3.x, p3.y, p3.z,
+      p1.x, p1.y, p1.z,
+      p3.x, p3.y, p3.z,
+      p4.x, p4.y, p4.z,
+    ]);
+    geo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat.glass);
+    m.renderOrder = 1;
+    return m;
+  }
+  const v = (x, y, z) => new THREE.Vector3(x, y, z);
+  // Left roof: from (-W/2, H) up to (0, P), spanning full length
+  g.add(makeRoofPane(
+    v(-W/2, H, -L/2), v(0, P, -L/2), v(0, P, L/2), v(-W/2, H, L/2)
+  ));
+  // Right roof
+  g.add(makeRoofPane(
+    v(0, P, -L/2), v(W/2, H, -L/2), v(W/2, H, L/2), v(0, P, L/2)
+  ));
+
+  // --- Wooden frame: corner posts, mid posts, top beams, ridge, rafters ---
+  const postGeo = new THREE.BoxGeometry(t * 1.4, H, t * 1.4);
+  for (const [px, pz] of [[-W/2,-L/2],[W/2,-L/2],[-W/2,L/2],[W/2,L/2]]) {
+    const post = new THREE.Mesh(postGeo, mat.wood);
+    post.position.set(px, H/2, pz);
+    post.castShadow = true;
+    g.add(post);
+  }
+  // Mid posts along long walls
+  for (let z = -L/2 + 3.5; z < L/2 - 0.1; z += 3.5) {
+    for (const px of [-W/2, W/2]) {
+      const post = new THREE.Mesh(postGeo, mat.wood);
+      post.position.set(px, H/2, z);
+      post.castShadow = true;
+      g.add(post);
+    }
+  }
+  // Top plates (beams along long walls)
+  const plateGeo = new THREE.BoxGeometry(t * 1.4, t * 1.4, L);
+  const plateL = new THREE.Mesh(plateGeo, mat.wood);
+  plateL.position.set(-W/2, H, 0); g.add(plateL);
+  const plateR = new THREE.Mesh(plateGeo, mat.wood);
+  plateR.position.set( W/2, H, 0); g.add(plateR);
+
+  // Ridge beam
+  const ridge = new THREE.Mesh(new THREE.BoxGeometry(t * 1.4, t * 1.4, L), mat.wood);
+  ridge.position.set(0, P, 0);
+  g.add(ridge);
+
+  // Rafters (diagonal wooden beams) — explicit endpoint-to-endpoint
+  const rafterGeo = new THREE.BoxGeometry(t, t, slope);
+  const tmp = new THREE.Vector3();
+  function rafter(a, b) {
+    const m = new THREE.Mesh(rafterGeo, mat.wood);
+    m.position.copy(a).add(b).multiplyScalar(0.5);
+    m.lookAt(b);
+    m.castShadow = true;
+    return m;
+  }
+  for (let z = -L/2; z <= L/2 + 0.01; z += 2) {
+    g.add(rafter(v(-W/2, H, z), v(0, P, z)));
+    g.add(rafter(v(0, P, z), v(W/2, H, z)));
+  }
+
+  // Door (a plank panel that can swing open — interactable)
+  const door = new THREE.Group();
+  door.position.set(-dW, 0, -L/2); // hinge at left edge of opening
+  const doorPanel = new THREE.Mesh(
+    new THREE.BoxGeometry(dW * 2, dH, 0.08),
+    mat.woodL
+  );
+  doorPanel.position.set(dW, dH / 2, 0);
+  doorPanel.castShadow = true;
+  doorPanel.userData.interaction = { type: 'door', doorGroup: door };
+  door.add(doorPanel);
+  // door cross boards
+  const board = new THREE.Mesh(new THREE.BoxGeometry(dW * 2 - 0.1, 0.1, 0.09), mat.darkWd);
+  board.position.set(dW, dH * 0.75, 0.05);
+  doorPanel.add(board);
+  const board2 = board.clone();
+  board2.position.set(0, -dH * 0.5, 0);
+  doorPanel.add(board2);
+  // doorknob
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.06, 10, 10), mat.metal);
+  knob.position.set(dW * 1.7 - dW, dH / 2, 0.08);
+  doorPanel.add(knob);
+  interactables.push(doorPanel);
+  g.add(door);
+
+  // Number sign above door
+  const numPanel = makeSignPanel(0.8, 0.8, number.toString(), '#1a1a1a');
+  numPanel.position.set(0, P - 0.8, -L/2 - 0.06);
+  g.add(numPanel);
+
+  // Theme name sign above door
+  const themePanel = makeSignPanel(2.4, 0.55, themeName, '#2a2a2a');
+  themePanel.position.set(0, dH + 0.3, -L/2 - 0.06);
+  g.add(themePanel);
+  themePanel.userData.interaction = {
+    type: 'popup',
+    title: themeName + ' House',
+    body: themeBlurb(themeName),
+  };
+  interactables.push(themePanel);
+
+  scene.add(g);
+
+  // Collision walls for this greenhouse
+  addWall(cx - W/2 - 0.1, cx - W/2 + 0.1, -L/2, L/2);
+  addWall(cx + W/2 - 0.1, cx + W/2 + 0.1, -L/2, L/2);
+  addWall(cx - W/2, cx - dW, -L/2 - 0.1, -L/2 + 0.1);
+  addWall(cx + dW, cx + W/2, -L/2 - 0.1, -L/2 + 0.1);
+  addWall(cx - W/2, cx + W/2, L/2 - 0.1, L/2 + 0.1);
+
+  // Interior floor
+  const floorColor = themeName === 'DESERT' ? mat.sand
+                   : themeName === 'JUNGLE' ? mat.dirt
+                   : mat.gravel;
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.1, L - 0.1), floorColor);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.set(cx, 0.02, 0);
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  return g;
+}
+
+/* =========================================================
+   SIGN HELPERS (canvas textures)
+   ========================================================= */
+function makeTextTexture(text, opts = {}) {
+  const {
+    width = 512, height = 128,
+    bg = '#efe5c6', fg = '#1a1a1a',
+    font = 'bold 52px Georgia, serif',
+    border = true
+  } = opts;
+  const c = document.createElement('canvas');
+  c.width = width; c.height = height;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, width, height);
+  if (border) {
+    ctx.strokeStyle = '#5a3a20';
+    ctx.lineWidth = 6;
+    ctx.strokeRect(4, 4, width - 8, height - 8);
+  }
+  ctx.fillStyle = fg;
+  ctx.font = font;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, width / 2, height / 2 + 4);
+  const tex = new THREE.CanvasTexture(c);
+  tex.anisotropy = 8;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function makeSignPanel(w, h, text, fg = '#1a1a1a') {
+  const aspect = w / h;
+  const tex = makeTextTexture(text, {
+    width: 512, height: Math.round(512 / aspect), fg
+  });
+  const panel = new THREE.Mesh(
+    new THREE.BoxGeometry(w, h, 0.05),
+    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 })
+  );
+  panel.castShadow = true;
+  return panel;
+}
+
+function themeBlurb(name) {
+  switch (name) {
+    case 'DESERT':
+      return 'A sun-baked landscape of saguaros, agaves, and prickly pears. Our arid-climate specimens thrive in minimal water and maximum light.';
+    case 'JUNGLE':
+      return 'Humid and dense with tropicals — palms, monstera, and giant ferns. Mist pulses through this house to mimic a rainforest understory.';
+    case 'HOUSEPLANTS':
+      return 'Rows of pothos, snake plants, philodendrons, and fiddle-leaf figs ready to join your home. Low- to bright-indirect-light varieties.';
+    case 'BONSAI':
+      return 'Miniature living sculptures, some more than thirty years in training. Junipers, maples, pines, and flowering bonsai on raised cedar benches.';
+  }
+  return '';
+}
+
+/* =========================================================
+   PLANTS — DESERT
+   ========================================================= */
+function makeSaguaro(h = 2.5) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.22, 0.28, h, 14, 1),
+    mat.cacGreen
+  );
+  trunk.position.y = h / 2;
+  trunk.castShadow = true;
+  g.add(trunk);
+
+  // Ribs (flutes) as thin vertical boxes
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const rib = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, h * 0.95, 0.04),
+      mat.cacDark
+    );
+    rib.position.set(Math.cos(a) * 0.24, h / 2, Math.sin(a) * 0.24);
+    g.add(rib);
+  }
+
+  // Arms
+  const makeArm = (side) => {
+    const arm = new THREE.Group();
+    const lower = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.13, 0.7, 10),
+      mat.cacGreen
+    );
+    lower.rotation.z = side * -Math.PI / 3;
+    lower.position.set(side * 0.25, 0.1, 0);
+    lower.castShadow = true;
+    arm.add(lower);
+    const upper = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.1, 0.11, 0.7, 10),
+      mat.cacGreen
+    );
+    upper.position.set(side * 0.52, 0.55, 0);
+    upper.castShadow = true;
+    arm.add(upper);
+    arm.position.y = h * 0.6;
+    return arm;
+  };
+  if (h > 1.8) {
+    g.add(makeArm(1));
+    if (Math.random() > 0.3) g.add(makeArm(-1));
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Saguaro Cactus',
+    body: '(Carnegiea gigantea) — Arizona\'s iconic desert sentinel. May live 150+ years and not grow arms until age 75. Do not touch!'
+  };
+  return g;
+}
+
+function makeBarrelCactus(r = 0.4, h = 0.55) {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(r, 16, 12),
+    mat.cacGreen
+  );
+  body.scale.y = h / r;
+  body.position.y = r * 0.6;
+  body.castShadow = true;
+  g.add(body);
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const rib = new THREE.Mesh(
+      new THREE.BoxGeometry(0.02, h * 1.8, 0.02),
+      mat.cacDark
+    );
+    rib.position.set(Math.cos(a) * r * 0.95, r * 0.6, Math.sin(a) * r * 0.95);
+    g.add(rib);
+  }
+  // Top flower
+  if (Math.random() > 0.5) {
+    const flower = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 8, 6),
+      mat.flowerY
+    );
+    flower.position.y = h * 1.2;
+    g.add(flower);
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Golden Barrel Cactus',
+    body: '(Echinocactus grusonii) — A slow-growing cactus that can live over a century. Sharp golden spines protect it from grazers.'
+  };
+  return g;
+}
+
+function makeAgave() {
+  const g = new THREE.Group();
+  const bladeMat = new THREE.MeshStandardMaterial({ color: 0x7aa468, roughness: 0.8, side: THREE.DoubleSide });
+  for (let i = 0; i < 14; i++) {
+    const a = (i / 14) * Math.PI * 2;
+    const blade = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.9, 4), bladeMat);
+    blade.position.set(Math.cos(a) * 0.2, 0.45, Math.sin(a) * 0.2);
+    blade.lookAt(Math.cos(a) * 1.5, 0.9, Math.sin(a) * 1.5);
+    blade.castShadow = true;
+    g.add(blade);
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Agave',
+    body: 'Succulent rosettes with spiked leaf-tips. Some species flower just once in a 30-year lifetime — then die spectacularly.'
+  };
+  return g;
+}
+
+function makePricklyPear() {
+  const g = new THREE.Group();
+  const padMat = mat.cacGreen;
+  const padGeo = new THREE.SphereGeometry(0.3, 10, 8);
+  const addPad = (x, y, z, scaleZ = 0.1, rot = 0) => {
+    const pad = new THREE.Mesh(padGeo, padMat);
+    pad.scale.set(1, 1.2, scaleZ);
+    pad.rotation.y = rot;
+    pad.position.set(x, y, z);
+    pad.castShadow = true;
+    g.add(pad);
+    return pad;
+  };
+  addPad(0, 0.35, 0);
+  addPad(0.25, 0.8, 0.05);
+  addPad(-0.22, 0.75, -0.05);
+  addPad(0.05, 1.15, 0.1);
+  g.userData.interaction = {
+    type: 'popup', title: 'Prickly Pear',
+    body: '(Opuntia) — Flat-padded cactus whose fruits (tunas) and young pads (nopales) are a staple in Mexican cuisine.'
+  };
+  return g;
+}
+
+function populateDesert(cx) {
+  // Rocks
+  for (let i = 0; i < 20; i++) {
+    const rock = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(0.15 + Math.random() * 0.25),
+      new THREE.MeshStandardMaterial({ color: 0x9a7656, roughness: 1 })
+    );
+    rock.position.set(cx + (Math.random() - 0.5) * (GH_W - 1), 0.1, (Math.random() - 0.5) * (GH_L - 1));
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.castShadow = true;
+    scene.add(rock);
+  }
+
+  const plants = [
+    () => { const p = makeSaguaro(2.4 + Math.random() * 1.2); return p; },
+    () => makeBarrelCactus(0.3 + Math.random() * 0.2, 0.4 + Math.random() * 0.3),
+    () => makeAgave(),
+    () => makePricklyPear(),
+  ];
+
+  // Two rows of plantings along the sides
+  for (let z = -GH_L/2 + 1.5; z <= GH_L/2 - 1.5; z += 2.2) {
+    for (const side of [-1, 1]) {
+      const p = plants[Math.floor(Math.random() * plants.length)]();
+      p.position.set(cx + side * (GH_W/2 - 1.5), 0, z + (Math.random() - 0.5) * 0.6);
+      scene.add(p);
+      registerInteractable(p);
+    }
+  }
+}
+
+/* =========================================================
+   PLANTS — JUNGLE
+   ========================================================= */
+function makePalm(h = 3.5) {
+  const g = new THREE.Group();
+  // Curving trunk (segmented cylinders)
+  const segs = 6;
+  for (let i = 0; i < segs; i++) {
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.14 - i * 0.008, 0.16 - i * 0.008, h / segs + 0.05, 10),
+      mat.bark
+    );
+    seg.position.y = (i + 0.5) * (h / segs);
+    seg.position.x = Math.sin(i / segs * Math.PI) * 0.15;
+    seg.castShadow = true;
+    g.add(seg);
+  }
+  // Fronds
+  const frondMat = mat.jungleL;
+  const frondGeo = new THREE.PlaneGeometry(1.6, 0.35);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const frond = new THREE.Mesh(frondGeo, frondMat);
+    frond.position.set(
+      Math.cos(a) * 0.5 + Math.sin((segs - 1) / segs * Math.PI) * 0.15,
+      h,
+      Math.sin(a) * 0.5
+    );
+    frond.rotation.y = -a;
+    frond.rotation.z = -0.3 - Math.random() * 0.3;
+    frond.castShadow = true;
+    g.add(frond);
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Areca Palm',
+    body: 'A clustering feather palm from Madagascar. Thrives in warm, humid shade and filters indoor air.'
+  };
+  return g;
+}
+
+function makeMonstera() {
+  const g = new THREE.Group();
+  const leafMat = mat.jungle;
+  // Leaves on stalks
+  for (let i = 0; i < 6; i++) {
+    const stalk = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.02, 0.8, 6),
+      mat.cacDark
+    );
+    const ang = (i / 6) * Math.PI * 2;
+    stalk.position.set(Math.cos(ang) * 0.1, 0.4, Math.sin(ang) * 0.1);
+    stalk.rotation.z = Math.cos(ang) * 0.4;
+    stalk.rotation.x = Math.sin(ang) * 0.4;
+    g.add(stalk);
+
+    const leaf = new THREE.Mesh(new THREE.CircleGeometry(0.38, 10), leafMat);
+    leaf.scale.set(1, 1.2, 1);
+    leaf.position.set(Math.cos(ang) * 0.5, 0.85, Math.sin(ang) * 0.5);
+    leaf.lookAt(camera.position); // will be updated later if needed — just for now
+    leaf.rotation.x = -Math.PI / 2.4;
+    leaf.rotation.y = -ang + Math.PI / 2;
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  // Pot
+  const potG = makePot(0.3, 0.35);
+  g.add(potG);
+  g.userData.interaction = {
+    type: 'popup', title: 'Monstera Deliciosa',
+    body: 'The Swiss cheese plant. Its natural leaf holes (fenestrations) allow storm gusts to pass through without tearing.'
+  };
+  return g;
+}
+
+function makeFern() {
+  const g = new THREE.Group();
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const frond = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.12, 0.9),
+      mat.leaf
+    );
+    frond.position.set(Math.cos(a) * 0.05, 0.45, Math.sin(a) * 0.05);
+    frond.rotation.y = -a;
+    frond.rotation.z = -0.4 - Math.random() * 0.3;
+    frond.castShadow = true;
+    g.add(frond);
+  }
+  const potG = makePot(0.22, 0.22);
+  g.add(potG);
+  g.userData.interaction = {
+    type: 'popup', title: 'Boston Fern',
+    body: 'A lacy fern that craves humidity. Victorian parlors popularized it as an indoor air-freshener.'
+  };
+  return g;
+}
+
+function makeBanana() {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.22, 2.2, 10),
+    mat.jungle
+  );
+  trunk.position.y = 1.1;
+  trunk.castShadow = true;
+  g.add(trunk);
+  // Huge leaves
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const leaf = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.8, 2),
+      mat.jungleL
+    );
+    leaf.position.set(Math.cos(a) * 0.3, 2.2 + i * 0.05, Math.sin(a) * 0.3);
+    leaf.rotation.y = -a;
+    leaf.rotation.z = -0.6;
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Banana Plant',
+    body: 'Not actually a tree — its "trunk" is a pseudostem made of tightly-wrapped leaf bases. Fruits only once, then dies.'
+  };
+  return g;
+}
+
+function populateJungle(cx) {
+  // Central path planters
+  const planter = new THREE.Mesh(
+    new THREE.BoxGeometry(GH_W - 1.5, 0.3, 0.5),
+    mat.woodL
+  );
+  // Long side planter beds
+  for (const side of [-1, 1]) {
+    const bed = new THREE.Mesh(
+      new THREE.BoxGeometry(1.4, 0.35, GH_L - 2),
+      mat.woodL
+    );
+    bed.position.set(cx + side * (GH_W/2 - 1.2), 0.18, 0);
+    bed.castShadow = true;
+    bed.receiveShadow = true;
+    scene.add(bed);
+    const dirt = new THREE.Mesh(
+      new THREE.BoxGeometry(1.2, 0.1, GH_L - 2.2),
+      mat.dirt
+    );
+    dirt.position.set(cx + side * (GH_W/2 - 1.2), 0.4, 0);
+    scene.add(dirt);
+  }
+
+  const types = [makePalm, makeMonstera, makeFern, makeBanana];
+  for (let z = -GH_L/2 + 1.3; z <= GH_L/2 - 1.3; z += 1.7) {
+    for (const side of [-1, 1]) {
+      const t = types[Math.floor(Math.random() * types.length)];
+      const p = t === makePalm ? makePalm(2.5 + Math.random() * 1.5) : t();
+      p.position.set(cx + side * (GH_W/2 - 1.2) + (Math.random() - 0.5) * 0.4, 0.42, z);
+      scene.add(p);
+      registerInteractable(p);
+    }
+  }
+}
+
+/* =========================================================
+   PLANTS — HOUSEPLANTS
+   ========================================================= */
+function makePot(r = 0.2, h = 0.25) {
+  const g = new THREE.Group();
+  const pot = new THREE.Mesh(
+    new THREE.CylinderGeometry(r, r * 0.8, h, 12),
+    mat.pot
+  );
+  pot.position.y = h / 2;
+  pot.castShadow = true;
+  g.add(pot);
+  const dirt = new THREE.Mesh(
+    new THREE.CylinderGeometry(r * 0.93, r * 0.93, 0.04, 12),
+    mat.dirt
+  );
+  dirt.position.y = h - 0.02;
+  g.add(dirt);
+  return g;
+}
+
+function makeSnakePlant() {
+  const g = new THREE.Group();
+  g.add(makePot(0.18, 0.2));
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const blade = new THREE.Mesh(
+      new THREE.BoxGeometry(0.06, 0.7 + Math.random() * 0.3, 0.015),
+      mat.cacDark
+    );
+    blade.position.set(Math.cos(a) * 0.06, 0.45, Math.sin(a) * 0.06);
+    blade.rotation.y = -a;
+    blade.rotation.z = (Math.random() - 0.5) * 0.15;
+    blade.castShadow = true;
+    g.add(blade);
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Snake Plant',
+    body: '(Dracaena trifasciata) — Nearly impossible to kill. Releases oxygen at night, unlike most plants.'
+  };
+  return g;
+}
+
+function makePothos() {
+  const g = new THREE.Group();
+  g.add(makePot(0.16, 0.18));
+  // Trailing vines with leaves
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2;
+    for (let j = 0; j < 4; j++) {
+      const leaf = new THREE.Mesh(
+        new THREE.CircleGeometry(0.08, 6),
+        mat.leafY
+      );
+      leaf.position.set(
+        Math.cos(a) * (0.1 + j * 0.08),
+        0.25 + j * 0.06,
+        Math.sin(a) * (0.1 + j * 0.08)
+      );
+      leaf.rotation.x = -Math.PI / 2 + 0.3;
+      leaf.rotation.y = -a;
+      leaf.castShadow = true;
+      g.add(leaf);
+    }
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Golden Pothos',
+    body: 'Tropical vine with marbled heart-shaped leaves. Beginner-proof; happy to trail or climb.'
+  };
+  return g;
+}
+
+function makeFiddleLeaf() {
+  const g = new THREE.Group();
+  g.add(makePot(0.22, 0.28));
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.05, 1.2, 8),
+    mat.bark
+  );
+  trunk.position.y = 0.85;
+  trunk.castShadow = true;
+  g.add(trunk);
+  for (let i = 0; i < 8; i++) {
+    const h = 0.5 + i * 0.12;
+    const a = i * 0.8;
+    const leaf = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.25, 0.4),
+      mat.jungleL
+    );
+    leaf.position.set(Math.cos(a) * 0.1, h, Math.sin(a) * 0.1);
+    leaf.rotation.y = -a;
+    leaf.rotation.z = 0.3;
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Fiddle-Leaf Fig',
+    body: '(Ficus lyrata) — Dramatic violin-shaped leaves. Famously moody about light, water, and drafts.'
+  };
+  return g;
+}
+
+function makeSucculent() {
+  const g = new THREE.Group();
+  g.add(makePot(0.1, 0.1));
+  const rosMat = new THREE.MeshStandardMaterial({ color: 0x88b070, roughness: 0.7 });
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * Math.PI * 2;
+    const leaf = new THREE.Mesh(new THREE.SphereGeometry(0.05, 6, 6), rosMat);
+    leaf.scale.set(1, 1.5, 0.6);
+    leaf.position.set(Math.cos(a) * 0.06, 0.14, Math.sin(a) * 0.06);
+    leaf.rotation.y = -a;
+    leaf.rotation.z = -0.3;
+    g.add(leaf);
+  }
+  g.userData.interaction = {
+    type: 'popup', title: 'Echeveria Succulent',
+    body: 'A rosette-forming succulent. Each leaf stores water to survive long droughts.'
+  };
+  return g;
+}
+
+function populateHouseplants(cx) {
+  // Rows of wooden benches with potted plants
+  const types = [makeSnakePlant, makePothos, makeFiddleLeaf, makeSucculent];
+  const benches = [
+    { x: cx - 2.5, w: 1.2 },
+    { x: cx,       w: 1.2 },
+    { x: cx + 2.5, w: 1.2 },
+  ];
+  for (const b of benches) {
+    // Bench top
+    const top = new THREE.Mesh(
+      new THREE.BoxGeometry(b.w, 0.06, GH_L - 2),
+      mat.woodL
+    );
+    top.position.set(b.x, 0.7, 0);
+    top.castShadow = true;
+    top.receiveShadow = true;
+    scene.add(top);
+    // Legs
+    for (const z of [-GH_L/2 + 2, 0, GH_L/2 - 2]) {
+      for (const xo of [-b.w/2 + 0.1, b.w/2 - 0.1]) {
+        const leg = new THREE.Mesh(
+          new THREE.BoxGeometry(0.08, 0.7, 0.08),
+          mat.wood
+        );
+        leg.position.set(b.x + xo, 0.35, z);
+        leg.castShadow = true;
+        scene.add(leg);
+      }
+    }
+    // Plants on bench
+    for (let z = -GH_L/2 + 1.5; z <= GH_L/2 - 1.5; z += 0.7) {
+      const p = types[Math.floor(Math.random() * types.length)]();
+      p.position.set(b.x + (Math.random() - 0.5) * 0.3, 0.73, z);
+      scene.add(p);
+      registerInteractable(p);
+    }
+  }
+  // Hanging pothos from rafters
+  for (let z = -GH_L/2 + 3; z <= GH_L/2 - 3; z += 3) {
+    for (const side of [-1, 1]) {
+      const chain = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.01, 0.01, 1.5, 4),
+        mat.metal
+      );
+      chain.position.set(cx + side * 2.5, 3.0, z);
+      scene.add(chain);
+      const hp = makePothos();
+      hp.position.set(cx + side * 2.5, 2.3, z);
+      hp.scale.set(0.85, 0.85, 0.85);
+      scene.add(hp);
+      registerInteractable(hp);
+    }
+  }
+}
+
+/* =========================================================
+   PLANTS — BONSAI
+   ========================================================= */
+function makeBonsai(style = 0) {
+  const g = new THREE.Group();
+  // Shallow rectangular tray
+  const tray = new THREE.Mesh(
+    new THREE.BoxGeometry(0.45, 0.08, 0.32),
+    mat.potGray
+  );
+  tray.position.y = 0.04;
+  tray.castShadow = true;
+  g.add(tray);
+  const moss = new THREE.Mesh(
+    new THREE.BoxGeometry(0.42, 0.03, 0.29),
+    new THREE.MeshStandardMaterial({ color: 0x2f5a2a, roughness: 0.9 })
+  );
+  moss.position.y = 0.09;
+  g.add(moss);
+  // Gnarled trunk
+  const curveP = [
+    new THREE.Vector3(0, 0.1, 0),
+    new THREE.Vector3(0.05, 0.25, 0.02),
+    new THREE.Vector3(-0.03, 0.38, -0.03),
+    new THREE.Vector3(0.02, 0.5, 0.04)
+  ];
+  const curve = new THREE.CatmullRomCurve3(curveP);
+  const trunkGeo = new THREE.TubeGeometry(curve, 12, 0.04, 8, false);
+  const trunk = new THREE.Mesh(trunkGeo, mat.bark);
+  trunk.castShadow = true;
+  g.add(trunk);
+  // Canopy — cluster of spheres
+  const foliageMat = style === 1
+    ? new THREE.MeshStandardMaterial({ color: 0xb85439, roughness: 0.8 }) // maple
+    : new THREE.MeshStandardMaterial({ color: 0x3a6a3a, roughness: 0.8 });
+  for (let i = 0; i < 6; i++) {
+    const blob = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1 + Math.random() * 0.06, 8, 6),
+      foliageMat
+    );
+    const ang = Math.random() * Math.PI * 2;
+    const r = Math.random() * 0.12;
+    blob.position.set(
+      Math.cos(ang) * r + 0.02,
+      0.5 + Math.random() * 0.08,
+      Math.sin(ang) * r + 0.04
+    );
+    blob.castShadow = true;
+    g.add(blob);
+  }
+  const species = style === 1 ? 'Japanese Maple' : ['Juniper', 'White Pine', 'Elm'][Math.floor(Math.random() * 3)];
+  const ages = [12, 18, 25, 40, 55];
+  g.userData.interaction = {
+    type: 'popup', title: species + ' Bonsai',
+    body: `Approximately ${ages[Math.floor(Math.random()*ages.length)]} years in training. Shaped through patient pruning and wiring. Please do not touch the branches.`
+  };
+  return g;
+}
+
+function populateBonsai(cx) {
+  // Raised cedar benches with bonsai arranged in a grid
+  for (const side of [-1, 1]) {
+    const bx = cx + side * 2;
+    // bench
+    const top = new THREE.Mesh(
+      new THREE.BoxGeometry(1.6, 0.08, GH_L - 3),
+      mat.woodL
+    );
+    top.position.set(bx, 0.9, 0);
+    top.castShadow = true;
+    top.receiveShadow = true;
+    scene.add(top);
+    for (const z of [-GH_L/2 + 2.5, -2, 2, GH_L/2 - 2.5]) {
+      for (const xo of [-0.75, 0.75]) {
+        const leg = new THREE.Mesh(
+          new THREE.BoxGeometry(0.1, 0.9, 0.1),
+          mat.wood
+        );
+        leg.position.set(bx + xo, 0.45, z);
+        leg.castShadow = true;
+        scene.add(leg);
+      }
+    }
+    // Bonsai
+    for (let z = -GH_L/2 + 2; z <= GH_L/2 - 2; z += 1.0) {
+      const b = makeBonsai(Math.random() > 0.7 ? 1 : 0);
+      b.position.set(bx + (Math.random() - 0.5) * 0.5, 0.94, z + (Math.random() - 0.5) * 0.2);
+      b.rotation.y = Math.random() * Math.PI * 2;
+      scene.add(b);
+      registerInteractable(b);
+    }
+  }
+}
+
+/* =========================================================
+   TREES (perimeter)
+   ========================================================= */
+function makePineTree(h = 6) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.22, h * 0.4, 8),
+    mat.bark
+  );
+  trunk.position.y = h * 0.2;
+  trunk.castShadow = true;
+  g.add(trunk);
+  for (let i = 0; i < 4; i++) {
+    const cone = new THREE.Mesh(
+      new THREE.ConeGeometry((0.9 - i * 0.15) * h * 0.17, h * 0.35, 10),
+      mat.pineDk
+    );
+    cone.position.y = h * 0.35 + i * h * 0.13;
+    cone.castShadow = true;
+    g.add(cone);
+  }
+  return g;
+}
+function makeLeafyTree(h = 6) {
+  const g = new THREE.Group();
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.28, h * 0.5, 8),
+    mat.bark
+  );
+  trunk.position.y = h * 0.25;
+  trunk.castShadow = true;
+  g.add(trunk);
+  const canopy = new THREE.Mesh(
+    new THREE.SphereGeometry(h * 0.3, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0x3e6a2f, roughness: 0.9 })
+  );
+  canopy.position.y = h * 0.65;
+  canopy.castShadow = true;
+  canopy.scale.y = 1.1;
+  g.add(canopy);
+  return g;
+}
+function populateTrees() {
+  // Surround the perimeter, avoiding paths and greenhouses
+  const positions = [];
+  for (let x = -85; x <= 85; x += 5 + Math.random() * 3) {
+    for (const z of [-85, 85, -65, 65, 50, -50, 35, -35]) {
+      if (Math.abs(x) > 40 || Math.abs(z) > 30) {
+        positions.push([x + (Math.random() - 0.5) * 3, z + (Math.random() - 0.5) * 3]);
+      }
+    }
+  }
+  for (let z = -85; z <= 85; z += 6 + Math.random() * 3) {
+    for (const x of [-80, 80, -60, 60]) {
+      positions.push([x + (Math.random() - 0.5) * 4, z + (Math.random() - 0.5) * 3]);
+    }
+  }
+  for (const [x, z] of positions) {
+    const t = Math.random() > 0.5 ? makePineTree(5 + Math.random() * 4) : makeLeafyTree(5 + Math.random() * 3);
+    t.position.set(x, 0, z);
+    t.rotation.y = Math.random() * Math.PI * 2;
+    scene.add(t);
+  }
+}
+
+/* =========================================================
+   ENTRANCE SIGN "GREENWOOD NURSERY"
+   ========================================================= */
+function addEntranceSign() {
+  const g = new THREE.Group();
+  g.position.set(0, 0, -GH_L / 2 - 8);
+
+  // Two posts
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(
+      new THREE.BoxGeometry(0.2, 2.5, 0.2),
+      mat.wood
+    );
+    post.position.set(side * 2, 1.25, 0);
+    post.castShadow = true;
+    g.add(post);
+  }
+
+  // Sign board
+  const tex = makeTextTexture('GREENWOOD\nNURSERY', {
+    width: 768, height: 384,
+    bg: '#e8dbb5', fg: '#2a1a0a',
+    font: 'bold 110px Georgia, serif'
+  });
+  // Using text with line breaks — rewrite with manual two-line drawing:
+  const c = document.createElement('canvas');
+  c.width = 768; c.height = 384;
+  const cx2 = c.getContext('2d');
+  cx2.fillStyle = '#e8dbb5';
+  cx2.fillRect(0, 0, c.width, c.height);
+  cx2.strokeStyle = '#5a3a20';
+  cx2.lineWidth = 8;
+  cx2.strokeRect(6, 6, c.width - 12, c.height - 12);
+  cx2.fillStyle = '#2a1a0a';
+  cx2.textAlign = 'center';
+  cx2.textBaseline = 'middle';
+  cx2.font = 'bold 110px Georgia, serif';
+  cx2.fillText('GREENWOOD', c.width / 2, 130);
+  cx2.font = 'bold 90px Georgia, serif';
+  cx2.fillText('NURSERY', c.width / 2, 260);
+  cx2.font = 'italic 36px Georgia, serif';
+  cx2.fillText('— Est. 1932 —', c.width / 2, 335);
+  const cTex = new THREE.CanvasTexture(c);
+  cTex.colorSpace = THREE.SRGBColorSpace;
+  cTex.anisotropy = 8;
+
+  const board = new THREE.Mesh(
+    new THREE.BoxGeometry(4.2, 2.1, 0.1),
+    new THREE.MeshStandardMaterial({ map: cTex, roughness: 0.7 })
+  );
+  board.position.set(0, 1.8, 0);
+  board.castShadow = true;
+  board.userData.interaction = {
+    type: 'popup', title: 'Greenwood Nursery',
+    body: 'Family-run since 1932. Four distinct climate-controlled glasshouses let us grow everything from Sonoran desert natives to humid-loving bonsai — all in one stop.'
+  };
+  interactables.push(board);
+  g.add(board);
+
+  // Decorative top beam
+  const beam = new THREE.Mesh(
+    new THREE.BoxGeometry(4.6, 0.2, 0.2),
+    mat.wood
+  );
+  beam.position.y = 2.7;
+  g.add(beam);
+
+  scene.add(g);
+}
+
+/* =========================================================
+   WATERING CAN (pickup interactable)
+   ========================================================= */
+let carriedItem = null;
+let carriedMesh = null;
+
+function makeWateringCan() {
+  const g = new THREE.Group();
+  const canMat = new THREE.MeshStandardMaterial({ color: 0x3a7a8a, metalness: 0.4, roughness: 0.5 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 0.22, 12), canMat);
+  body.position.y = 0.11;
+  body.castShadow = true;
+  g.add(body);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.015, 6, 10, Math.PI), canMat);
+  handle.position.set(0, 0.26, 0);
+  handle.rotation.x = Math.PI / 2;
+  g.add(handle);
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.04, 0.28, 8), canMat);
+  spout.position.set(0.18, 0.2, 0);
+  spout.rotation.z = -Math.PI / 3;
+  g.add(spout);
+  const rose = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 0.04, 10), canMat);
+  rose.position.set(0.31, 0.31, 0);
+  rose.rotation.z = -Math.PI / 3;
+  g.add(rose);
+
+  g.userData.interaction = {
+    type: 'pickup', name: 'Watering Can',
+    body: 'You picked up a watering can. Click any plant to water it!'
+  };
+  return g;
+}
+
+function placeWateringCans() {
+  const positions = [
+    [-14, 0, -GH_L/2 - 2],
+    [14, 0, -GH_L/2 - 2],
+    [0, 0, GH_L/2 + 2.5]
+  ];
+  for (const [x, y, z] of positions) {
+    const can = makeWateringCan();
+    can.position.set(x, y, z);
+    scene.add(can);
+    registerInteractable(can);
+  }
+}
+
+/* =========================================================
+   BUILD THE WORLD
+   ========================================================= */
+for (let i = 0; i < 4; i++) {
+  createGreenhouseShell(GH_CENTERS[i], i + 1, THEMES[i]);
+}
+populateDesert(GH_CENTERS[0]);
+populateJungle(GH_CENTERS[1]);
+populateHouseplants(GH_CENTERS[2]);
+populateBonsai(GH_CENTERS[3]);
+populateTrees();
+addEntranceSign();
+placeWateringCans();
+
+// Add a few clouds in the sky
+for (let i = 0; i < 14; i++) {
+  const cloud = new THREE.Group();
+  for (let j = 0; j < 5; j++) {
+    const puff = new THREE.Mesh(
+      new THREE.SphereGeometry(4 + Math.random() * 3, 8, 6),
+      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 })
+    );
+    puff.position.set(j * 4 - 8, Math.random() * 2, Math.random() * 2);
+    cloud.add(puff);
+  }
+  cloud.position.set((Math.random() - 0.5) * 220, 60 + Math.random() * 20, (Math.random() - 0.5) * 220);
+  scene.add(cloud);
+}
+
+// Register all descendants of a group as interactable proxies
+function registerInteractable(group) {
+  // Propagate group.userData.interaction to mesh children for easier raycasting
+  const interaction = group.userData.interaction;
+  if (!interaction) return;
+  group.traverse(child => {
+    if (child.isMesh) {
+      if (!child.userData.interaction) {
+        child.userData.interaction = interaction;
+        child.userData.interactionRoot = group;
+      }
+      interactables.push(child);
+    }
+  });
+}
+
+/* =========================================================
+   PLAYER CONTROLS
+   ========================================================= */
+const controls = new PointerLockControls(camera, renderer.domElement);
+scene.add(controls.getObject());
+// Spawn in front of the entrance sign, facing the greenhouses
+controls.getObject().position.set(0, 1.7, -GH_L / 2 - 13);
+camera.lookAt(0, 1.7, 0);
+
+const keys = { w: false, a: false, s: false, d: false, shift: false, space: false };
+document.addEventListener('keydown', (e) => {
+  switch (e.code) {
+    case 'KeyW': keys.w = true; break;
+    case 'KeyA': keys.a = true; break;
+    case 'KeyS': keys.s = true; break;
+    case 'KeyD': keys.d = true; break;
+    case 'ShiftLeft': case 'ShiftRight': keys.shift = true; break;
+    case 'Space': if (!e.repeat && grounded) { velocityY = 5.2; grounded = false; } break;
+  }
+});
+document.addEventListener('keyup', (e) => {
+  switch (e.code) {
+    case 'KeyW': keys.w = false; break;
+    case 'KeyA': keys.a = false; break;
+    case 'KeyS': keys.s = false; break;
+    case 'KeyD': keys.d = false; break;
+    case 'ShiftLeft': case 'ShiftRight': keys.shift = false; break;
+  }
+});
+
+/* Collision resolution against walls list */
+function resolveCollisions(pos) {
+  const R = 0.35;
+  for (const w of walls) {
+    const inX = pos.x > w.minX - R && pos.x < w.maxX + R;
+    const inZ = pos.z > w.minZ - R && pos.z < w.maxZ + R;
+    if (!inX || !inZ) continue;
+    const dLeft  = pos.x - (w.minX - R);
+    const dRight = (w.maxX + R) - pos.x;
+    const dNear  = pos.z - (w.minZ - R);
+    const dFar   = (w.maxZ + R) - pos.z;
+    const m = Math.min(dLeft, dRight, dNear, dFar);
+    if (m === dLeft)       pos.x = w.minX - R;
+    else if (m === dRight) pos.x = w.maxX + R;
+    else if (m === dNear)  pos.z = w.minZ - R;
+    else                   pos.z = w.maxZ + R;
+  }
+}
+
+let velocityY = 0;
+let grounded = true;
+const playerObj = controls.getObject();
+
+/* =========================================================
+   INTERACTION SYSTEM
+   ========================================================= */
+const raycaster = new THREE.Raycaster();
+raycaster.far = 5;
+const hoverOrigin = new THREE.Vector2(0, 0);
+let lastHover = null;
+
+function getHover() {
+  raycaster.setFromCamera(hoverOrigin, camera);
+  const hits = raycaster.intersectObjects(interactables, true);
+  return hits.length > 0 ? hits[0].object : null;
+}
+
+const crosshair = document.getElementById('crosshair');
+const interactTip = document.getElementById('interact-tip');
+const popupEl = document.getElementById('popup');
+const inventoryEl = document.getElementById('inventory');
+const invName = document.getElementById('inv-name');
+
+popupEl.querySelector('.close').addEventListener('click', (e) => {
+  e.stopPropagation();
+  popupEl.style.display = 'none';
+});
+
+function showPopup(title, body) {
+  popupEl.querySelector('h3').textContent = title;
+  popupEl.querySelector('p').textContent = body;
+  popupEl.style.display = 'block';
+  clearTimeout(showPopup._t);
+  showPopup._t = setTimeout(() => { popupEl.style.display = 'none'; }, 7000);
+}
+
+// Door animation state
+const openingDoors = []; // { group, target, speed }
+
+function handleClick() {
+  if (!controls.isLocked) return;
+  // Drop carried item?
+  // (Handled via click on inventory; in-world click interacts)
+  const obj = getHover();
+  if (!obj) return;
+  const interaction = obj.userData.interaction;
+  if (!interaction) return;
+
+  if (interaction.type === 'popup') {
+    showPopup(interaction.title, interaction.body);
+  } else if (interaction.type === 'door') {
+    const dg = interaction.doorGroup;
+    dg.userData.open = !dg.userData.open;
+    const target = dg.userData.open ? -Math.PI / 2 * 0.95 : 0;
+    openingDoors.push({ group: dg, target, speed: 2.5 });
+    // If we have a watering can, also show the title
+  } else if (interaction.type === 'pickup') {
+    if (carriedItem) return;
+    // Pick up — hide from world, attach to camera
+    const root = obj.userData.interactionRoot || obj;
+    root.parent.remove(root);
+    carriedItem = interaction;
+    carriedMesh = root;
+    carriedMesh.scale.set(0.7, 0.7, 0.7);
+    camera.add(carriedMesh);
+    carriedMesh.position.set(0.45, -0.4, -0.6);
+    carriedMesh.rotation.set(0, -0.3, 0);
+    scene.add(camera); // make sure camera is in scene graph
+    inventoryEl.style.display = 'block';
+    invName.textContent = interaction.name;
+    showPopup('Picked up: ' + interaction.name, interaction.body);
+  }
+}
+
+inventoryEl.addEventListener('click', () => {
+  if (!carriedMesh) return;
+  // Drop in front of player
+  camera.remove(carriedMesh);
+  carriedMesh.scale.set(1, 1, 1);
+  const dropPos = new THREE.Vector3();
+  camera.getWorldPosition(dropPos);
+  const fwd = new THREE.Vector3();
+  camera.getWorldDirection(fwd);
+  dropPos.addScaledVector(fwd, 1.2);
+  dropPos.y = 0;
+  carriedMesh.position.copy(dropPos);
+  carriedMesh.rotation.set(0, Math.random() * Math.PI * 2, 0);
+  scene.add(carriedMesh);
+  registerInteractable(carriedMesh);
+  carriedItem = null;
+  carriedMesh = null;
+  inventoryEl.style.display = 'none';
+});
+
+renderer.domElement.addEventListener('click', handleClick);
+
+/* Plant-watering: when carrying can, clicking a plant shows a green pulse */
+const waterPulses = [];
+const origHandleClick = handleClick;
+
+/* Wrap handleClick to handle watering */
+renderer.domElement.removeEventListener('click', handleClick);
+renderer.domElement.addEventListener('click', () => {
+  if (!controls.isLocked) {
+    controls.lock();
+    return;
+  }
+  const obj = getHover();
+  if (!obj) return;
+  const interaction = obj.userData.interaction;
+  if (!interaction) return;
+
+  // If carrying can and clicking a plant popup interactable — water it
+  if (carriedItem && carriedItem.name === 'Watering Can' && interaction.type === 'popup'
+      && interaction.title && !interaction.title.includes('House') && !interaction.title.includes('Nursery')) {
+    const root = obj.userData.interactionRoot || obj;
+    const pos = new THREE.Vector3();
+    root.getWorldPosition(pos);
+    spawnWaterDroplets(pos);
+    showPopup('💧 Watered!', `You watered the ${interaction.title}. It looks grateful.`);
+    return;
+  }
+
+  if (interaction.type === 'popup') {
+    showPopup(interaction.title, interaction.body);
+  } else if (interaction.type === 'door') {
+    const dg = interaction.doorGroup;
+    dg.userData.open = !dg.userData.open;
+    const target = dg.userData.open ? -Math.PI / 2 * 0.95 : 0;
+    openingDoors.push({ group: dg, target, speed: 2.5 });
+  } else if (interaction.type === 'pickup') {
+    if (carriedItem) return;
+    const root = obj.userData.interactionRoot || obj;
+    root.parent.remove(root);
+    carriedItem = interaction;
+    carriedMesh = root;
+    carriedMesh.scale.set(0.7, 0.7, 0.7);
+    camera.add(carriedMesh);
+    carriedMesh.position.set(0.45, -0.4, -0.6);
+    carriedMesh.rotation.set(0, -0.3, 0);
+    if (!scene.children.includes(camera)) scene.add(camera);
+    inventoryEl.style.display = 'block';
+    invName.textContent = interaction.name;
+    showPopup('Picked up: ' + interaction.name, interaction.body);
+  }
+});
+
+function spawnWaterDroplets(pos) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x4fa8e6, transparent: true, opacity: 0.8,
+    emissive: 0x2a6a9e, emissiveIntensity: 0.3
+  });
+  for (let i = 0; i < 20; i++) {
+    const d = new THREE.Mesh(new THREE.SphereGeometry(0.04, 6, 6), mat);
+    d.position.copy(pos);
+    d.position.y += 1.2;
+    d.userData.v = new THREE.Vector3(
+      (Math.random() - 0.5) * 1,
+      -1 - Math.random(),
+      (Math.random() - 0.5) * 1
+    );
+    d.userData.life = 1.2;
+    group.add(d);
+  }
+  scene.add(group);
+  waterPulses.push(group);
+}
+
+/* =========================================================
+   START BUTTON / POINTER LOCK
+   ========================================================= */
+const overlay = document.getElementById('overlay');
+document.getElementById('startBtn').addEventListener('click', () => {
+  controls.lock();
+});
+controls.addEventListener('lock', () => { overlay.classList.add('hide'); });
+controls.addEventListener('unlock', () => { /* leave overlay hidden after first entry */ });
+
+/* =========================================================
+   GAME LOOP
+   ========================================================= */
+const clock = new THREE.Clock();
+const moveVec = new THREE.Vector3();
+const fwdVec = new THREE.Vector3();
+const sideVec = new THREE.Vector3();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  if (controls.isLocked) {
+    const speed = (keys.shift ? 7.5 : 3.8) * dt;
+    moveVec.set(0, 0, 0);
+
+    // Forward/backward
+    camera.getWorldDirection(fwdVec);
+    fwdVec.y = 0; fwdVec.normalize();
+    if (keys.w) moveVec.addScaledVector(fwdVec, speed);
+    if (keys.s) moveVec.addScaledVector(fwdVec, -speed);
+    // Strafe
+    sideVec.crossVectors(fwdVec, camera.up).normalize();
+    if (keys.d) moveVec.addScaledVector(sideVec, speed);
+    if (keys.a) moveVec.addScaledVector(sideVec, -speed);
+
+    playerObj.position.add(moveVec);
+    resolveCollisions(playerObj.position);
+
+    // Gravity / jump
+    velocityY -= 12 * dt;
+    playerObj.position.y += velocityY * dt;
+    if (playerObj.position.y <= 1.7) {
+      playerObj.position.y = 1.7;
+      velocityY = 0;
+      grounded = true;
+    }
+  }
+
+  // Crosshair highlight on hoverable object
+  const hover = getHover();
+  if (hover !== lastHover) {
+    lastHover = hover;
+    if (hover) {
+      crosshair.classList.add('hot');
+      interactTip.style.display = 'block';
+      const it = hover.userData.interaction;
+      interactTip.textContent =
+        it.type === 'door' ? 'Click to open/close door'
+        : it.type === 'pickup' ? `Click to pick up ${it.name}`
+        : `Click: ${it.title}`;
+    } else {
+      crosshair.classList.remove('hot');
+      interactTip.style.display = 'none';
+    }
+  }
+
+  // Animate doors
+  for (let i = openingDoors.length - 1; i >= 0; i--) {
+    const d = openingDoors[i];
+    const current = d.group.rotation.y;
+    const diff = d.target - current;
+    if (Math.abs(diff) < 0.02) {
+      d.group.rotation.y = d.target;
+      openingDoors.splice(i, 1);
+    } else {
+      d.group.rotation.y += Math.sign(diff) * Math.min(Math.abs(diff), d.speed * dt);
+    }
+  }
+
+  // Water droplet physics
+  for (let i = waterPulses.length - 1; i >= 0; i--) {
+    const group = waterPulses[i];
+    let alive = false;
+    for (const d of group.children) {
+      d.userData.life -= dt;
+      d.userData.v.y -= 9 * dt;
+      d.position.addScaledVector(d.userData.v, dt);
+      d.material.opacity = Math.max(0, d.userData.life * 0.8);
+      if (d.userData.life > 0) alive = true;
+    }
+    if (!alive) {
+      scene.remove(group);
+      waterPulses.splice(i, 1);
+    }
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
