@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Greenwood Nursery - 3D Tour</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; font-family:Arial,sans-serif; }
+canvas { display:block; }
+#ui { position:fixed; top:0; left:0; right:0; bottom:0; pointer-events:none; }
+#crosshair {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  color:rgba(255,255,255,0.85); font-size:22px; line-height:1;
+  text-shadow:0 0 4px #000;
+}
+#instructions {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  background:rgba(0,0,0,0.88); color:#fff;
+  padding:32px 44px; border-radius:14px; text-align:center;
+  pointer-events:all; cursor:pointer;
+  border:1px solid rgba(255,255,255,0.15);
+  max-width:440px;
+}
+#instructions h1 { font-size:26px; margin-bottom:12px; color:#7dc55c; }
+#instructions p { margin:7px 0; font-size:15px; line-height:1.5; }
+#instructions .hint { margin-top:20px; font-size:13px; color:#aaa; }
+#infoPanel {
+  position:absolute; bottom:44px; left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.88); color:#fff;
+  padding:16px 26px; border-radius:10px;
+  max-width:420px; width:90%; text-align:center;
+  display:none; border-left:4px solid #7dc55c;
+}
+#infoPanel h3 { color:#7dc55c; margin-bottom:6px; font-size:16px; }
+#infoPanel p { font-size:14px; line-height:1.6; }
+#interactHint {
+  position:absolute; top:56%; left:50%;
+  transform:translateX(-50%);
+  background:rgba(0,0,0,0.72); color:#7dc55c;
+  padding:5px 14px; border-radius:20px; font-size:13px;
+  display:none;
+}
+#locationLabel {
+  position:absolute; top:18px; left:50%;
+  transform:translateX(-50%);
+  color:#fff; font-size:17px; font-weight:bold;
+  background:rgba(0,0,0,0.45); padding:5px 18px; border-radius:20px;
+  display:none; text-shadow:0 1px 4px #000;
+}
+#controlsHint {
+  position:absolute; bottom:18px; left:18px;
+  color:rgba(255,255,255,0.55); font-size:12px; display:none;
+}
+#minimapWrap {
+  position:absolute; bottom:18px; right:18px;
+  display:none;
+}
+#minimapWrap canvas { border-radius:6px; border:1px solid rgba(255,255,255,0.25); }
+</style>
+</head>
+<body>
+<div id="ui">
+  <div id="crosshair">+</div>
+  <div id="instructions">
+    <h1>Greenwood Nursery</h1>
+    <p>Explore four unique greenhouse sections:</p>
+    <p><b style="color:#d4a017">Desert</b> &nbsp; <b style="color:#2ecc71">Jungle</b> &nbsp; <b style="color:#3498db">Houseplants</b> &nbsp; <b style="color:#e07070">Bonsai</b></p>
+    <p style="margin-top:14px;font-size:13px;color:#ccc">Walk in, approach plants, and press <b>E</b> to learn about them.</p>
+    <div class="hint">Click anywhere to start &mdash; ESC to pause</div>
+  </div>
+  <div id="infoPanel"><h3 id="infoTitle"></h3><p id="infoDesc"></p></div>
+  <div id="interactHint"></div>
+  <div id="locationLabel"></div>
+  <div id="controlsHint">WASD / Arrows: Move &nbsp;|&nbsp; Shift: Run &nbsp;|&nbsp; Mouse: Look &nbsp;|&nbsp; E: Inspect &nbsp;|&nbsp; ESC: Pause</div>
+  <div id="minimapWrap"><canvas id="minimap" width="130" height="110"></canvas></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+<script>
+// ── RENDERER & SCENE ─────────────────────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 35, 90);
+
+const camera = new THREE.PerspectiveCamera(72, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0, 1.7, 28);
+
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── LIGHTING ─────────────────────────────────────────────────────────────────
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const sun = new THREE.DirectionalLight(0xfff8e8, 1.1);
+sun.position.set(25, 45, 20);
+sun.castShadow = true;
+Object.assign(sun.shadow.mapSize, { width:2048, height:2048 });
+Object.assign(sun.shadow.camera, { near:0.5, far:200, left:-70, right:70, top:70, bottom:-70 });
+scene.add(sun);
+
+// ── CONTROLS ─────────────────────────────────────────────────────────────────
+let yaw = Math.PI, pitch = 0, isLocked = false;
+const SENS = 0.0022;
+const keys = {};
+const canvas = renderer.domElement;
+const $instructions = document.getElementById('instructions');
+
+canvas.addEventListener('click', () => { if (!isLocked) canvas.requestPointerLock(); });
+document.addEventListener('pointerlockchange', () => {
+  isLocked = document.pointerLockElement === canvas;
+  $instructions.style.display = isLocked ? 'none' : 'block';
+  ['controlsHint','minimapWrap','locationLabel'].forEach(id => {
+    document.getElementById(id).style.display = isLocked ? 'block' : 'none';
+  });
+});
+document.addEventListener('mousemove', e => {
+  if (!isLocked) return;
+  yaw   -= e.movementX * SENS;
+  pitch -= e.movementY * SENS;
+  pitch  = Math.max(-1.4, Math.min(1.4, pitch));
+  camera.rotation.order = 'YXZ';
+  camera.rotation.y = yaw;
+  camera.rotation.x = pitch;
+});
+document.addEventListener('keydown', e => { keys[e.code] = true; });
+document.addEventListener('keyup',   e => { keys[e.code] = false; });
+
+// ── SHARED MATERIALS ─────────────────────────────────────────────────────────
+const M = {
+  gravel:    new THREE.MeshLambertMaterial({ color:0xB0A090 }),
+  grass:     new THREE.MeshLambertMaterial({ color:0x487a2f }),
+  glass:     new THREE.MeshPhongMaterial({ color:0xaaddff, transparent:true, opacity:0.22, side:THREE.DoubleSide, shininess:120 }),
+  frame:     new THREE.MeshLambertMaterial({ color:0x8B7050 }),
+  base:      new THREE.MeshLambertMaterial({ color:0xC8B99A }),
+  soil:      new THREE.MeshLambertMaterial({ color:0x3d2b1f }),
+  sand:      new THREE.MeshLambertMaterial({ color:0xe8d5a3 }),
+  rock:      new THREE.MeshLambertMaterial({ color:0x9a9a9a }),
+  cactus:    new THREE.MeshLambertMaterial({ color:0x5d8a3c }),
+  jLeaf:     new THREE.MeshLambertMaterial({ color:0x2d6e2f, side:THREE.DoubleSide }),
+  dkGreen:   new THREE.MeshLambertMaterial({ color:0x1a5e1a }),
+  ltGreen:   new THREE.MeshLambertMaterial({ color:0x5cb85c }),
+  trunk:     new THREE.MeshLambertMaterial({ color:0x5c3d1e }),
+  bLeaf:     new THREE.MeshLambertMaterial({ color:0x2e6b2e }),
+  terraPot:  new THREE.MeshLambertMaterial({ color:0xb5652b }),
+  whitePot:  new THREE.MeshLambertMaterial({ color:0xe8e8e8 }),
+  wood:      new THREE.MeshLambertMaterial({ color:0x8B6914 }),
+  bedWood:   new THREE.MeshLambertMaterial({ color:0x7B5B3A }),
+  signDark:  new THREE.MeshLambertMaterial({ color:0x4a2e10 }),
+  lampPost:  new THREE.MeshLambertMaterial({ color:0x333333 }),
+  lampGlow:  new THREE.MeshStandardMaterial({ color:0xffffcc, emissive:0xffff88, emissiveIntensity:1.2 }),
+};
+
+// ── PRIMITIVE HELPERS ────────────────────────────────────────────────────────
+function box(w,h,d, mat, x,y,z, ry) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+  m.position.set(x,y,z);
+  if (ry) m.rotation.y = ry;
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m); return m;
+}
+function cyl(rt,rb,h,seg, mat, x,y,z) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt,rb,h,seg), mat);
+  m.position.set(x,y,z);
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m); return m;
+}
+function sph(r,mat,x,y,z) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r,8,6), mat);
+  m.position.set(x,y,z);
+  m.castShadow = true;
+  scene.add(m); return m;
+}
+function plane(w,d,mat,x,y,z) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(w,d), mat);
+  m.rotation.x = -Math.PI/2; m.position.set(x,y,z);
+  m.receiveShadow = true; scene.add(m); return m;
+}
+
+// ── GROUND & ENVIRONMENT ──────────────────────────────────────────────────────
+plane(250,250, M.gravel, 0,0,0);
+// Grass patches outside
+plane(40,100, M.grass, -55,0.01,0);
+plane(40,100, M.grass,  55,0.01,0);
+plane(120,35, M.grass,   0,0.01,-52);
+plane(120,35, M.grass,   0,0.01, 55);
+
+// Background trees
+function bgTree(x,z) {
+  cyl(0.3,0.4,5,6, M.trunk, x,2.5,z);
+  sph(2.5, M.dkGreen, x,6,z);
+}
+for (let i=-48;i<=48;i+=9) { bgTree(i,-52); bgTree(i,58); }
+for (let z=-44;z<=50;z+=9) { bgTree(-52,z); bgTree(52,z); }
+
+// ── GREENHOUSE DIMENSIONS ────────────────────────────────────────────────────
+const GW=13, GD=20, WALL=4.0, ROOF=2.5, GAP=3.5;
+const TOTAL = 4*GW + 3*GAP;
+const ghCenters = [0,1,2,3].map(i => ({
+  x: -TOTAL/2 + GW/2 + i*(GW+GAP),
+  z: 2
+}));
+const ghData = [
+  { label:'DESERT',      accent:0xd4a017, floor:0xe8d5a3, zoneColor:'#d4a017' },
+  { label:'JUNGLE',      accent:0x2ecc71, floor:0x4a7c2f, zoneColor:'#2ecc71' },
+  { label:'HOUSEPLANTS', accent:0x3498db, floor:0x5a4a3a, zoneColor:'#3498db' },
+  { label:'BONSAI',      accent:0xe07070, floor:0x7a6a5a, zoneColor:'#e07070' },
+];
+
+// ── BUILD GREENHOUSE ─────────────────────────────────────────────────────────
+function buildGreenhouse(cx, cz, data) {
+  const hw=GW/2, hd=GD/2, fw=0.14;
+  const plateY = WALL+0.5, peakY = plateY+ROOF;
+  const DW=2.0, DH=2.6;
+
+  // Floor
+  plane(GW,GD, new THREE.MeshLambertMaterial({color:data.floor}), cx,0.02,cz);
+
+  // Base trim
+  box(GW,0.5,0.18, M.base, cx,0.25,cz-hd);
+  box(GW,0.5,0.18, M.base, cx,0.25,cz+hd);
+  box(0.18,0.5,GD, M.base, cx-hw,0.25,cz);
+  box(0.18,0.5,GD, M.base, cx+hw,0.25,cz);
+
+  // Glass walls
+  const sideW = (GW-DW)/2;
+  // front left & right of door
+  const glassPanel = (w,h,x,y,z) => {
+    const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,0.04),M.glass);
+    m.position.set(x,y,z); scene.add(m);
+  };
+  glassPanel(sideW, WALL, cx-DW/2-sideW/2, WALL/2+0.5, cz-hd);
+  glassPanel(sideW, WALL, cx+DW/2+sideW/2, WALL/2+0.5, cz-hd);
+  glassPanel(DW, WALL-DH,  cx, DH+(WALL-DH)/2+0.5, cz-hd); // above door
+  // back, sides
+  const glassB = new THREE.Mesh(new THREE.BoxGeometry(GW,WALL,0.04),M.glass);
+  glassB.position.set(cx,WALL/2+0.5,cz+hd); scene.add(glassB);
+  const glassL = new THREE.Mesh(new THREE.BoxGeometry(0.04,WALL,GD),M.glass);
+  glassL.position.set(cx-hw,WALL/2+0.5,cz); scene.add(glassL);
+  const glassR = glassL.clone(); glassR.position.x=cx+hw; scene.add(glassR);
+
+  // Frame posts
+  [[cx-hw,cz-hd],[cx+hw,cz-hd],[cx-hw,cz+hd],[cx+hw,cz+hd]].forEach(([px,pz])=>{
+    box(fw,peakY+ROOF*0.3,fw, M.frame, px,peakY/2,pz);
+  });
+  // Mid posts
+  for(let i=1;i<3;i++){
+    const pz=cz-hd+(GD/3)*i;
+    box(fw,plateY,fw, M.frame, cx-hw,plateY/2,pz);
+    box(fw,plateY,fw, M.frame, cx+hw,plateY/2,pz);
+  }
+  // Door frame
+  box(fw,DH+0.5,fw, M.frame, cx-DW/2,(DH+0.5)/2,cz-hd);
+  box(fw,DH+0.5,fw, M.frame, cx+DW/2,(DH+0.5)/2,cz-hd);
+  box(DW+fw,fw,fw,  M.frame, cx,DH+0.5,cz-hd);
+  // Top plates
+  box(GW,fw,fw, M.frame, cx,plateY,cz-hd);
+  box(GW,fw,fw, M.frame, cx,plateY,cz+hd);
+  box(fw,fw,GD, M.frame, cx-hw,plateY,cz);
+  box(fw,fw,GD, M.frame, cx+hw,plateY,cz);
+
+  // Roof panels
+  const roofAngle = Math.atan2(ROOF, hw);
+  const panelW = Math.sqrt(hw*hw + ROOF*ROOF);
+  for(const side of[-1,1]){
+    const panel=new THREE.Mesh(new THREE.BoxGeometry(panelW,0.04,GD),M.glass);
+    panel.position.set(cx+side*hw/2, plateY+ROOF/2, cz);
+    panel.rotation.z = side*roofAngle;
+    scene.add(panel);
+  }
+  // Ridge & rafters
+  box(fw,fw,GD, M.frame, cx,peakY,cz);
+  for(let rz=cz-hd;rz<=cz+hd;rz+=4){
+    for(const side of[-1,1]){
+      const r=new THREE.Mesh(new THREE.BoxGeometry(panelW,fw,fw),M.frame);
+      r.position.set(cx+side*hw/2,plateY+ROOF/2,rz);
+      r.rotation.z=side*roofAngle;
+      scene.add(r);
+    }
+  }
+
+  // Gable triangles
+  for(const gz of[cz-hd, cz+hd]){
+    const geo=new THREE.BufferGeometry();
+    geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array([
+      -hw,plateY,0, hw,plateY,0, 0,peakY,0
+    ]),3));
+    geo.setIndex([0,2,1,0,1,2]);
+    geo.computeVertexNormals();
+    const m=new THREE.Mesh(geo,M.glass); m.position.set(cx,0,gz); scene.add(m);
+  }
+
+  // Sign above door
+  box(4,0.85,0.12, M.signDark, cx,DH+1.6,cz-hd-0.1);
+  box(3.4,0.45,0.06, new THREE.MeshLambertMaterial({color:data.accent}), cx,DH+1.6,cz-hd-0.17);
+}
+
+ghCenters.forEach((c,i)=>buildGreenhouse(c.x,c.z,ghData[i]));
+
+// ── PLANT FACTORIES ──────────────────────────────────────────────────────────
+function mkGroup(x,y,z){ const g=new THREE.Group(); g.position.set(x,y,z); scene.add(g); return g; }
+
+function addCactus(x,z,s){ s=s||1;
+  const g=mkGroup(x,0,z);
+  const tk=new THREE.Mesh(new THREE.CylinderGeometry(0.26*s,0.32*s,2.6*s,8),M.cactus);
+  tk.position.y=1.3*s; g.add(tk);
+  [[-1,0.3],[1,-0.3]].forEach(([side,rot])=>{
+    const arm=new THREE.Mesh(new THREE.CylinderGeometry(0.16*s,0.20*s,1.6*s,7),M.cactus);
+    arm.position.set(side*0.85*s, 1.5*s, 0); arm.rotation.z=side*Math.PI/3; g.add(arm);
+    const top=new THREE.Mesh(new THREE.CylinderGeometry(0.13*s,0.16*s,0.9*s,7),M.cactus);
+    top.position.set(side*1.3*s, 2.4*s, 0); g.add(top);
+  });
+  return g;
+}
+
+function addSucculent(x,z){
+  const g=mkGroup(x,0,z);
+  const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.25,0.19,0.32,8),M.terraPot);
+  pot.position.y=0.16; g.add(pot);
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2;
+    const lf=new THREE.Mesh(new THREE.SphereGeometry(0.15,6,4),M.cactus);
+    lf.scale.set(0.55,0.28,1.25); lf.position.set(Math.cos(a)*0.24,0.4,Math.sin(a)*0.24);
+    lf.rotation.y=a; lf.rotation.x=0.55; g.add(lf);
+  }
+  const c=new THREE.Mesh(new THREE.SphereGeometry(0.12,6,4),M.ltGreen);
+  c.position.y=0.48; g.add(c);
+  return g;
+}
+
+function addJunglePlant(x,z,s){ s=s||1;
+  const g=mkGroup(x,0,z);
+  const st=new THREE.Mesh(new THREE.CylinderGeometry(0.07*s,0.12*s,1.6*s,6),M.trunk);
+  st.position.y=0.8*s; g.add(st);
+  for(let i=0;i<7;i++){
+    const a=(i/7)*Math.PI*2+0.3;
+    const lf=new THREE.Mesh(new THREE.SphereGeometry(0.62*s,8,4),M.jLeaf);
+    lf.scale.set(0.38,0.14,1.15); lf.position.set(Math.cos(a)*0.85*s, 1.5*s+Math.sin(i)*0.18*s, Math.sin(a)*0.85*s);
+    lf.rotation.y=a; lf.rotation.x=-0.42; g.add(lf);
+  }
+  return g;
+}
+
+function addPalm(x,z,s){ s=s||1;
+  const g=mkGroup(x,0,z);
+  const tk=new THREE.Mesh(new THREE.CylinderGeometry(0.18*s,0.26*s,4*s,8),M.trunk);
+  tk.position.y=2*s; tk.rotation.z=0.1; g.add(tk);
+  for(let i=0;i<8;i++){
+    const a=(i/8)*Math.PI*2;
+    const fr=new THREE.Mesh(new THREE.SphereGeometry(0.85*s,8,3),M.jLeaf);
+    fr.scale.set(0.18,0.07,1.6); fr.position.set(Math.cos(a)*1.3*s, 4.1*s, Math.sin(a)*1.3*s);
+    fr.rotation.y=a; fr.rotation.x=-0.62; g.add(fr);
+  }
+  return g;
+}
+
+function addBonsai(x,z,yOff){ yOff=yOff||0;
+  const g=mkGroup(x,yOff,z);
+  const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.46,0.36,0.42,8),M.terraPot);
+  pot.position.y=0.21; g.add(pot);
+  const soil=new THREE.Mesh(new THREE.CylinderGeometry(0.43,0.43,0.06,8),M.soil);
+  soil.position.y=0.44; g.add(soil);
+  const tk=new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.13,1.5,6),M.trunk);
+  tk.position.set(0,1.17,0); tk.rotation.z=0.22; tk.rotation.x=0.08; g.add(tk);
+  [[-.42,1.55,0,Math.PI/3,-0.06],[.38,1.75,0.1,-Math.PI/4,0.07]].forEach(([bx,by,bz,rz,rx])=>{
+    const br=new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.07,0.8,5),M.trunk);
+    br.position.set(bx,by,bz); br.rotation.z=rz; br.rotation.x=rx; g.add(br);
+  });
+  [[0,2.05,0,0.52],[-.62,1.82,0.1,0.42],[.52,2.15,-0.1,0.42],[.1,1.72,0.42,0.36]].forEach(([fx,fy,fz,fr])=>{
+    const f=new THREE.Mesh(new THREE.SphereGeometry(fr,7,5),M.bLeaf);
+    f.position.set(fx,fy,fz); g.add(f);
+  });
+  return g;
+}
+
+function addHousePlant(x,z,type,yOff){ yOff=yOff||0;
+  const g=mkGroup(x,yOff,z);
+  const pm=type%2===0?M.terraPot:M.whitePot;
+  const pot=new THREE.Mesh(new THREE.CylinderGeometry(0.3,0.22,0.52,8),pm);
+  pot.position.y=0.26; g.add(pot);
+  if(type===0){
+    const st=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,1.3,6),M.trunk);
+    st.position.y=1.15; g.add(st);
+    const cr=new THREE.Mesh(new THREE.SphereGeometry(0.52,8,6),M.ltGreen);
+    cr.scale.set(1.2,0.82,1.2); cr.position.y=1.88; g.add(cr);
+  } else if(type===1){
+    for(let i=0;i<5;i++){
+      const a=(i/5)*Math.PI*2;
+      const st=new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.05,0.95,5),M.trunk);
+      st.position.set(Math.cos(a)*0.18,0.78,Math.sin(a)*0.18);
+      st.rotation.z=Math.cos(a)*0.32; st.rotation.x=Math.sin(a)*0.32; g.add(st);
+      const lf=new THREE.Mesh(new THREE.SphereGeometry(0.3,6,4),M.dkGreen);
+      lf.position.set(Math.cos(a)*0.46,1.28,Math.sin(a)*0.46); g.add(lf);
+    }
+  } else {
+    const b=new THREE.Mesh(new THREE.SphereGeometry(0.38,8,6),M.ltGreen);
+    b.scale.set(1.1,0.72,1.1); b.position.y=0.74; g.add(b);
+  }
+  return g;
+}
+
+function addRock(x,z,s){ s=s||0.5;
+  const m=new THREE.Mesh(new THREE.SphereGeometry(s,7,5),M.rock);
+  m.scale.set(1.5,0.68,1.2); m.position.set(x,s*0.35,z);
+  m.castShadow=true; scene.add(m); return m;
+}
+
+function addRaisedBed(cx,cz,w,d){
+  const h=0.42;
+  box(w,h,0.1,M.bedWood,cx,h/2,cz-d/2);
+  box(w,h,0.1,M.bedWood,cx,h/2,cz+d/2);
+  box(0.1,h,d,M.bedWood,cx-w/2,h/2,cz);
+  box(0.1,h,d,M.bedWood,cx+w/2,h/2,cz);
+  plane(w-0.12,d-0.12,M.soil,cx,h,cz);
+}
+
+function addTable(cx,cz,w,d){
+  const th=0.82;
+  box(w,0.06,d,M.wood,cx,th,cz);
+  [[-1,-1],[1,-1],[-1,1],[1,1]].forEach(([sx,sz])=>{
+    box(0.08,th,0.08,M.wood,cx+sx*(w/2-0.1),th/2,cz+sz*(d/2-0.1));
+  });
+}
+
+// ── POPULATE GREENHOUSES ─────────────────────────────────────────────────────
+const interactables = [];
+
+// GH0 – DESERT
+(()=>{
+  const {x:cx,z:cz}=ghCenters[0];
+  plane(GW-1,GD-1,M.sand,cx,0.03,cz);
+  addCactus(cx-3, cz-6, 1.0);
+  addCactus(cx+3, cz-4, 1.2);
+  addCactus(cx,   cz+2, 0.8);
+  addCactus(cx-4, cz+5, 1.4);
+  addCactus(cx+4, cz+6, 0.9);
+  const hero=addCactus(cx, cz-2.5, 1.55);
+  hero.userData={interactable:true, name:'Giant Saguaro Cactus',
+    desc:'Carnegiea gigantea — can live over 150 years and grow 40+ feet tall. The iconic symbol of the American Southwest, it grows only in the Sonoran Desert.'};
+  interactables.push(hero);
+  [[cx-2,cz-2],[cx+2,cz-5],[cx+1,cz+5],[cx-3,cz+3],[cx+5,cz+2]].forEach(([px,pz])=>addSucculent(px,pz));
+  [[cx+2,cz-7],[cx-5,cz-5],[cx+5,cz-2],[cx-1,cz+7]].forEach(([rx,rz])=>addRock(rx,rz,0.45+Math.random()*0.2));
+  // Stepping stones
+  for(let i=0;i<9;i++){
+    const sm=new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.35,0.06,6),M.rock);
+    sm.position.set(cx+Math.sin(i*0.7)*1.8, 0.04, cz-8+i*1.9); sm.receiveShadow=true; scene.add(sm);
+  }
+})();
+
+// GH1 – JUNGLE
+(()=>{
+  const {x:cx,z:cz}=ghCenters[1];
+  const hero=addPalm(cx,cz-1.5, 1.55);
+  hero.userData={interactable:true, name:'Areca Palm',
+    desc:'Dypsis lutescens — one of the world\'s most popular palms. A natural air purifier that removes formaldehyde and benzene. Thrives in bright, indirect tropical light.'};
+  interactables.push(hero);
+  addPalm(cx-3.5,cz-5,1.0); addPalm(cx+4,cz+1,1.2); addPalm(cx-2,cz+7,0.9);
+  [[cx+2,cz-7],[cx-4,cz-2],[cx+3.5,cz+4.5],[cx-3,cz+7],[cx,cz+2.5],[cx+5.5,cz-5],[cx-5.5,cz+3]].forEach(([px,pz])=>addJunglePlant(px,pz,0.9+Math.random()*0.5));
+  // Ground ferns / cover
+  for(let i=0;i<10;i++){
+    const a=(i/10)*Math.PI*2;
+    const cv=new THREE.Mesh(new THREE.SphereGeometry(0.9,8,5),M.jLeaf);
+    cv.scale.set(1.6,0.28,1.6); cv.position.set(cx+Math.cos(a)*3.8, 0.1, cz+Math.sin(a)*5.2); scene.add(cv);
+  }
+  // Stone path
+  for(let i=0;i<11;i++){
+    const sm=new THREE.Mesh(new THREE.CylinderGeometry(0.32,0.32,0.06,6),M.gravel);
+    sm.position.set(cx+Math.sin(i*0.55)*2.2, 0.04, cz-9+i*1.7); sm.receiveShadow=true; scene.add(sm);
+  }
+})();
+
+// GH2 – HOUSEPLANTS
+(()=>{
+  const {x:cx,z:cz}=ghCenters[2];
+  // Center aisle
+  plane(1.6,GD-1, M.gravel, cx,0.03,cz);
+  addRaisedBed(cx-3.2, cz, 4.5, 17);
+  addRaisedBed(cx+3.2, cz, 4.5, 17);
+  const hero=addHousePlant(cx,cz-1.5,0);
+  hero.userData={interactable:true, name:'Monstera Deliciosa',
+    desc:'The beloved "Swiss Cheese Plant" of tropical Mexico. Famous for dramatic split leaves (fenestrations). Easy-care and fast growing — a true living sculpture for any bright room.'};
+  interactables.push(hero);
+  for(let row=-7;row<=7;row+=2){
+    addHousePlant(cx-4.6,cz+row,row%3, 0.42);
+    addHousePlant(cx-3.2,cz+row,(row+1)%3, 0.42);
+    addHousePlant(cx+3.2,cz+row,(row+2)%3, 0.42);
+    addHousePlant(cx+4.6,cz+row,(row+1)%3, 0.42);
+  }
+  addJunglePlant(cx,cz+8,1.4); addJunglePlant(cx-2,cz+9,1.1); addJunglePlant(cx+2,cz+9,1.0);
+})();
+
+// GH3 – BONSAI
+(()=>{
+  const {x:cx,z:cz}=ghCenters[3];
+  plane(GW-1,GD-1, M.gravel, cx,0.03,cz);
+  // Zen rock garden center
+  const zen=new THREE.Mesh(new THREE.CylinderGeometry(1.8,1.8,0.09,20),M.sand);
+  zen.position.set(cx,0.05,cz); scene.add(zen);
+  for(let i=0;i<5;i++){
+    const a=(i/5)*Math.PI*2; addRock(cx+Math.cos(a)*1.1, cz+Math.sin(a)*1.1, 0.18);
+  }
+  // Tables
+  addTable(cx-3.8,cz-5, 4.5,2.4);
+  addTable(cx+3.8,cz-5, 4.5,2.4);
+  addTable(cx-3.8,cz+4, 4.5,2.4);
+  addTable(cx+3.8,cz+4, 4.5,2.4);
+  addTable(cx,    cz+8, 6,  2.0);
+
+  const TH=0.82;
+  const bPos=[
+    [cx-5,cz-5],[cx-3.8,cz-5],[cx-2.5,cz-5],
+    [cx+2.5,cz-5],[cx+3.8,cz-5],[cx+5,cz-5],
+    [cx-5,cz+4],[cx-3.8,cz+4],[cx-2.5,cz+4],
+    [cx+2.5,cz+4],[cx+3.8,cz+4],[cx+5,cz+4],
+    [cx-2,cz+8],[cx,cz+8],[cx+2,cz+8],
+  ];
+  bPos.forEach(([bx,bz])=>addBonsai(bx,bz,TH));
+
+  const hero=addBonsai(cx,cz-2.5,0);
+  hero.userData={interactable:true, name:'Japanese Maple Bonsai',
+    desc:'Acer palmatum — prized for delicate leaves that blaze scarlet in autumn. This specimen is approximately 40 years old, shaped using traditional Japanese wiring and pruning techniques.'};
+  interactables.push(hero);
+})();
+
+// ── OUTDOOR FEATURES ─────────────────────────────────────────────────────────
+// Main entrance sign
+box(0.2,2.6,0.2,M.wood, -1,1.3,24); box(0.2,2.6,0.2,M.wood, 1,1.3,24);
+box(5.6,1.1,0.14,M.signDark, 0,2.95,24);
+box(4.8,0.55,0.07,new THREE.MeshLambertMaterial({color:0x7dc55c}), 0,2.95,24.08);
+
+// Lamp posts
+function addLamp(x,z){
+  cyl(0.08,0.08,5.5,8,M.lampPost,x,2.75,z);
+  const g=new THREE.Mesh(new THREE.SphereGeometry(0.28,8,6),M.lampGlow);
+  g.position.set(x,5.6,z); scene.add(g);
+  const light=new THREE.PointLight(0xffffcc,0.6,12);
+  light.position.set(x,5.5,z); scene.add(light);
+}
+addLamp(-22,18); addLamp(22,18);
+addLamp(-ghCenters[0].x-1, ghCenters[0].z-GD/2-2);
+addLamp( ghCenters[3].x+1, ghCenters[3].z-GD/2-2);
+
+// Benches
+function addBench(bx,bz,ry){
+  const g=new THREE.Group();
+  const seat=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.08,0.52),M.wood);
+  seat.position.y=0.48; g.add(seat);
+  const back=new THREE.Mesh(new THREE.BoxGeometry(1.9,0.52,0.07),M.wood);
+  back.position.set(0,0.8,-0.24); g.add(back);
+  [[-0.72,-0.19],[0.72,-0.19],[-0.72,0.19],[0.72,0.19]].forEach(([lx,lz])=>{
+    const lg=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.48,0.08),M.lampPost);
+    lg.position.set(lx,0.24,lz); g.add(lg);
+  });
+  g.position.set(bx,0,bz); g.rotation.y=ry||0; scene.add(g);
+}
+addBench(-22,22,0); addBench(22,22,0); addBench(0,24,Math.PI/2);
+
+// Decorative outdoor pots
+for(let i=0;i<5;i++){
+  const px=-28+i*14;
+  cyl(0.4,0.3,0.8,8,M.terraPot,px,0.4,20);
+  addJunglePlant(px,20,0.7);
+}
+
+// ── INTERACTION / RAYCASTER ──────────────────────────────────────────────────
+const raycaster = new THREE.Raycaster();
+const CENTER2D  = new THREE.Vector2(0,0);
+let nearTarget  = null;
+const $hint     = document.getElementById('interactHint');
+const $panel    = document.getElementById('infoPanel');
+const $title    = document.getElementById('infoTitle');
+const $desc     = document.getElementById('infoDesc');
+let panelTimer  = null;
+
+function allMeshes(obj){ const ms=[]; obj.traverse(c=>{ if(c.isMesh) ms.push(c); }); return ms; }
+
+document.addEventListener('keydown', e=>{
+  if(e.code==='KeyE' && isLocked && nearTarget){
+    const {name,desc}=nearTarget.userData;
+    $title.textContent=name; $desc.textContent=desc;
+    $panel.style.display='block';
+    if(panelTimer) clearTimeout(panelTimer);
+    panelTimer=setTimeout(()=>{ $panel.style.display='none'; },6000);
+  }
+});
+
+// ── MINIMAP ───────────────────────────────────────────────────────────────────
+const mmCanvas = document.getElementById('minimap');
+const mmCtx    = mmCanvas.getContext('2d');
+const MM_SCALE = 1.55, MM_OX=65, MM_OY=55;
+
+function drawMinimap(){
+  mmCtx.clearRect(0,0,130,110);
+  mmCtx.fillStyle='rgba(20,20,20,0.82)'; mmCtx.fillRect(0,0,130,110);
+  const colors=['#d4a017','#2ecc71','#3498db','#e07070'];
+  ghCenters.forEach((c,i)=>{
+    mmCtx.fillStyle=colors[i]; mmCtx.globalAlpha=0.55;
+    const mx=MM_OX+c.x/MM_SCALE, mz=MM_OY+c.z/MM_SCALE;
+    mmCtx.fillRect(mx-GW/(2*MM_SCALE), mz-GD/(2*MM_SCALE), GW/MM_SCALE, GD/MM_SCALE);
+  });
+  mmCtx.globalAlpha=1;
+  const px=MM_OX+camera.position.x/MM_SCALE;
+  const pz=MM_OY+camera.position.z/MM_SCALE;
+  mmCtx.fillStyle='#fff'; mmCtx.beginPath(); mmCtx.arc(px,pz,3,0,Math.PI*2); mmCtx.fill();
+  mmCtx.strokeStyle='#fff'; mmCtx.lineWidth=1.5;
+  mmCtx.beginPath(); mmCtx.moveTo(px,pz);
+  mmCtx.lineTo(px-Math.sin(yaw)*9, pz-Math.cos(yaw)*9); mmCtx.stroke();
+}
+
+// ── ZONE LABEL ────────────────────────────────────────────────────────────────
+const zones = ghCenters.map((c,i)=>({
+  name: ['Desert Greenhouse','Jungle Greenhouse','Houseplants Greenhouse','Bonsai Greenhouse'][i],
+  color: ghData[i].zoneColor,
+  xMin:c.x-GW/2, xMax:c.x+GW/2, zMin:c.z-GD/2, zMax:c.z+GD/2
+}));
+const $loc = document.getElementById('locationLabel');
+
+// ── LOOP ──────────────────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+const fwd   = new THREE.Vector3();
+const rgt   = new THREE.Vector3();
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=clock.getDelta();
+
+  if(isLocked){
+    const speed = keys.ShiftLeft||keys.ShiftRight ? 9 : 5.5;
+    fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
+    rgt.set( Math.cos(yaw), 0, -Math.sin(yaw));
+    if(keys.KeyW||keys.ArrowUp)    camera.position.addScaledVector(fwd, speed*dt);
+    if(keys.KeyS||keys.ArrowDown)  camera.position.addScaledVector(fwd,-speed*dt);
+    if(keys.KeyA||keys.ArrowLeft)  camera.position.addScaledVector(rgt,-speed*dt);
+    if(keys.KeyD||keys.ArrowRight) camera.position.addScaledVector(rgt, speed*dt);
+    camera.position.y=1.7;
+    camera.position.x=Math.max(-58,Math.min(58,camera.position.x));
+    camera.position.z=Math.max(-15,Math.min(35,camera.position.z));
+
+    // Zone label
+    let zoneName='', zoneColor='#fff';
+    for(const z of zones){
+      if(camera.position.x>=z.xMin&&camera.position.x<=z.xMax&&
+         camera.position.z>=z.zMin&&camera.position.z<=z.zMax){
+        zoneName=z.name; zoneColor=z.color; break;
+      }
+    }
+    $loc.textContent=zoneName; $loc.style.color=zoneColor;
+    $loc.style.display=zoneName?'block':'none';
+
+    // Interaction raycast
+    raycaster.setFromCamera(CENTER2D, camera);
+    const allInteractMeshes=interactables.flatMap(allMeshes);
+    const hits=raycaster.intersectObjects(allInteractMeshes);
+    nearTarget=null;
+    if(hits.length&&hits[0].distance<5.5){
+      for(const obj of interactables){
+        let found=false;
+        obj.traverse(c=>{ if(c===hits[0].object) found=true; });
+        if(found){ nearTarget=obj; break; }
+      }
+    }
+    if(nearTarget){ $hint.style.display='block'; $hint.textContent=`[E] ${nearTarget.userData.name}`; }
+    else           { $hint.style.display='none'; }
+
+    drawMinimap();
+  }
+  renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>

@@ -1,0 +1,1 @@
+the world works. The greenshouses are squished together and there are no tunnels. While the plants do show info when pointed at, nothing is really interactive. You just walk through everything. Signs have no text.
