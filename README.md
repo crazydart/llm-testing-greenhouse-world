@@ -7,3 +7,8 @@ Create an image of a series of 4 connected greenhouses. It should be at a top do
 ## Prompt used with image to generate world:
 Create a 3D world/level that I can first person walk through based on the greenhouse image provided (prompt-image.png). It should be web browser based. It can have a web server or just be self contained in a single HTML file. I should be able to interact with elements in the world. Write a document on how to run it and the controls.
 
+## Extra prompts allowed
+In teh case of this test, several extra prompts will be allowed to get the project to a running state. Those need to be documented and will degrade the score for one shot prompting.
+
+
+
