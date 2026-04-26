@@ -78,6 +78,13 @@ Each tested model is scored across 8 categories totaling 100 points:
       <td colspan="10"><em>Initial run crashed with a <code>TypeError: number -6.25 is not iterable</code> in the render loop; required one follow-up prompt to fix (hence the One-Shot deduction). After the fix the scene is a fun rendition — added a minimap in the bottom-right that shows facing direction, plus benches scattered around. However doors ended up on the <b>back</b> of the houses, the <b>bonsai trees are oversized</b>, nothing is actually clickable (only mouseover tooltips), and you can walk through <b>everything</b> including walls. Run instructions are in <a href="sonnet-4.6-claude-code/HOW_TO_RUN.md">HOW_TO_RUN.md</a>. <a href="sonnet-4.6-claude-code/results/desert-house.png">Desert</a> · <a href="sonnet-4.6-claude-code/results/bonsai-house.png">Bonsai (oversized trees)</a> · <a href="sonnet-4.6-claude-code/results/close-up-walls.png">Walls close-up</a> · <a href="sonnet-4.6-claude-code/results/far-back-shot.png">Far back shot</a></em></td>
     </tr>
     <tr>
+      <td>Qwen 3.6 27B Q6 (local, opencode)</td>
+      <td>12</td><td>14</td><td>9</td><td>13</td><td>7</td><td>13</td><td>5</td><td>10</td><td><b>83</b></td>
+    </tr>
+    <tr>
+      <td colspan="10"><em>Surprisingly strong for a small local model — Qwen 3.6 27B at Q6 quant, hosted on local B70 GPUs and driven through the opencode harness. <b>Clean world on the first shot</b>, no follow-up prompts. Generation took <b>47 minutes</b> and ended at <b>~50k tokens</b> of context. The first model in this test to actually attempt the <b>connecting tunnels</b> between greenhouses. Plants are unusually interesting visually — terracotta pots, gray boulders, varied geometry, and colors well beyond just green. The odd quirk: doors render <b>somewhat inside</b> the greenhouses rather than flush with the front wall. Movement is a little buggy — getting stuck on geometry sometimes requires a page reload. <a href="qwen3.6-27b-Q6-opencode/results/desert.png">Desert</a> · <a href="qwen3.6-27b-Q6-opencode/results/bonsai.png">Bonsai</a> · <a href="qwen3.6-27b-Q6-opencode/results/far-back-view.png">Far back view</a></em></td>
+    </tr>
+    <tr>
       <td>Kimi K2.6</td>
       <td>7</td><td>8</td><td>11</td><td>5</td><td>1</td><td>6</td><td>3</td><td>8</td><td><b>49</b></td>
     </tr>
@@ -104,8 +111,9 @@ Things that varied the most across models:
 
 - **Collision**: the reference image has clearly-defined walls, but most models either implemented no collision at all or only collided with the exterior shell.
 - **Interactivity**: the prompt explicitly asks for interaction, but several models stopped at hover tooltips.
-- **Tunnels between greenhouses**: no model has yet reproduced the connecting tunnels shown in the reference image.
+- **Tunnels between greenhouses**: only Qwen 3.6 27B (local) has attempted the connecting tunnels shown in the reference image — every Claude model so far has skipped them.
 - **Greenhouse ordering**: only a couple of models match the left-to-right order (Desert → Jungle → Houseplants → Bonsai) from the image.
+- **Local vs. frontier**: a small local Q6-quantized 27B model running on a workstation produced output competitive with frontier hosted models, which was the biggest surprise of this test so far.
 
 ## Contributing
 

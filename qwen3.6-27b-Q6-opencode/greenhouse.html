@@ -1,0 +1,2264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Greenhouse World — 3D Walkthrough</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { overflow: hidden; background: #1a2a1a; font-family: 'Segoe UI', system-ui, sans-serif; }
+canvas { display: block; }
+
+#blocker {
+  position: fixed; inset: 0; z-index: 100;
+  background: radial-gradient(ellipse at 50% 40%, rgba(20,50,30,0.9), rgba(5,15,8,0.97));
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
+  cursor: pointer; transition: opacity 0.5s;
+}
+#blocker.hidden { opacity: 0; pointer-events: none; }
+#blocker h1 { font-size: 48px; color: #a8d89a; margin-bottom: 8px; text-shadow: 0 2px 20px rgba(80,160,60,0.4); letter-spacing: 3px; }
+#blocker .subtitle { color: #8ab88a; font-size: 16px; margin-bottom: 30px; }
+#blocker .controls-box {
+  background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px; padding: 20px 28px; margin-bottom: 28px;
+}
+#blocker .controls-box table { font-size: 14px; color: #ccc; }
+#blocker .controls-box td { padding: 4px 0; }
+#blocker .controls-box td:first-child { color: #ffd65a; font-weight: 600; padding-right: 20px; text-align: right; font-family: monospace; font-size: 15px; }
+#blocker .start-btn {
+  background: linear-gradient(135deg, #3a8a2a, #2a6a1e);
+  color: white; border: none; padding: 14px 40px; border-radius: 8px;
+  font-size: 17px; font-weight: 600; cursor: pointer; letter-spacing: 1px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+#blocker .start-btn:hover { filter: brightness(1.15); }
+
+#crosshair {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 16px; height: 16px; pointer-events: none; z-index: 10;
+}
+#crosshair::before, #crosshair::after {
+  content: ''; position: absolute; background: rgba(255,255,255,0.75);
+}
+#crosshair::before { width: 2px; height: 16px; left: 7px; top: 0; }
+#crosshair::after { width: 16px; height: 2px; top: 7px; left: 0; }
+#crosshair.hovering { background: rgba(255,214,90,0.3); border-radius: 50%; }
+#crosshair.hovering::before, #crosshair.hovering::after { background: #ffd65a; }
+
+#interact-label {
+  position: fixed; top: 56%; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.7); color: #ffd65a; padding: 6px 14px;
+  border-radius: 5px; font-size: 13px; display: none; z-index: 10;
+  border: 1px solid rgba(255,214,90,0.3);
+}
+
+#info-popup {
+  position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%);
+  background: linear-gradient(145deg, rgba(15,30,18,0.95), rgba(10,20,12,0.95));
+  border: 1px solid rgba(120,200,100,0.3); border-radius: 10px;
+  padding: 18px 24px; max-width: 420px; display: none; z-index: 20;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5); color: #ddd;
+  animation: popupIn 0.3s ease;
+}
+@keyframes popupIn { from { opacity:0; transform: translate(-50%, 30px); } to { opacity:1; transform: translate(-50%, 0); } }
+#info-popup h3 { color: #a8d89a; margin-bottom: 6px; font-size: 17px; }
+#info-popup p { line-height: 1.5; font-size: 14px; color: #bbb; }
+#info-popup .close-btn { position: absolute; top: 8px; right: 12px; cursor: pointer; color: #888; font-size: 20px; }
+#info-popup .close-btn:hover { color: #fff; }
+
+#hud {
+  position: fixed; top: 12px; left: 12px; z-index: 10;
+  background: rgba(10,25,15,0.5); backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+  padding: 10px 14px; font-size: 12px; color: #aaa; pointer-events: none;
+}
+#hud b { color: #8ab88a; }
+#zone-label { color: #ffd65a; font-weight: 600; font-size: 13px; }
+
+#minimap {
+  position: fixed; bottom: 14px; right: 14px; z-index: 10;
+  width: 180px; height: 180px; border-radius: 8px;
+  border: 2px solid rgba(255,255,255,0.15);
+  background: rgba(10,25,15,0.6); backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+#debug {
+  position: fixed; top: 12px; right: 12px; z-index: 10;
+  font-size: 11px; color: rgba(255,255,255,0.3); pointer-events: none;
+  font-family: monospace; text-align: right;
+}
+</style>
+</head>
+<body>
+
+<div id="blocker">
+  <h1>GREENHOUSE WORLD</h1>
+  <div class="subtitle">Explore four themed greenhouses — Desert, Jungle, House Plants &amp; Bonsai</div>
+  <div class="controls-box">
+    <table>
+      <tr><td>W A S D</td><td>Move</td></tr>
+      <tr><td>Mouse</td><td>Look around</td></tr>
+      <tr><td>Shift</td><td>Run</td></tr>
+      <tr><td>Space</td><td>Jump</td></tr>
+      <tr><td>Click</td><td>Interact with objects</td></tr>
+      <tr><td>E</td><td>Interact (when facing object)</td></tr>
+      <tr><td>ESC</td><td>Release mouse / Pause</td></tr>
+      <tr><td>M</td><td>Toggle minimap</td></tr>
+    </table>
+  </div>
+  <button class="start-btn" id="start-btn">CLICK TO START</button>
+</div>
+
+<div id="crosshair"></div>
+<div id="interact-label">Press E or Click to interact</div>
+<div id="info-popup"><span class="close-btn">&times;</span><h3 id="popup-title"></h3><p id="popup-body"></p></div>
+<div id="hud"><b>Greenhouse World</b> | Zone: <span id="zone-label">Entrance</span></div>
+<canvas id="minimap"></canvas>
+<div id="debug"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
+
+// ─── CONFIG ──────────────────────────────────────────
+const GH_W = 14;          // greenhouse width (X)
+const GH_D = 20;          // greenhouse depth (Y, going into scene)
+const GH_H = 6;           // greenhouse wall height
+const ROOF_H = 3.5;       // roof peak above walls
+const TUNNEL_W = 4;       // tunnel width
+const TUNNEL_H = 4.5;     // tunnel height
+const GH_SPACING = 6;     // gap between greenhouse edges (includes tunnel)
+const PLAYER_R = 0.4;     // player collision radius
+const PLAYER_H = 1.7;     // eye height
+const WALK_SPEED = 6;
+const RUN_SPEED = 11;
+const JUMP_VEL = 7;
+const GRAVITY = 18;
+
+// ─── GLOBALS ─────────────────────────────────────────
+let scene, camera, renderer, controls, clock;
+let moveF=false, moveB=false, moveL=false, moveR=false, canJump=false, isRunning=false;
+let velocity = new THREE.Vector3();
+let playerPos = new THREE.Vector3(0, PLAYER_H, 18); // start in front of greenhouses
+let wallSegments = []; // for collision
+let interactables = []; // clickable objects
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2(0, 0);
+let hoveredObj = null;
+let minimapVisible = true;
+let minimapCanvas, minimapCtx;
+let currentZone = 'Entrance';
+let doorStates = {}; // track open/closed doors
+let physicsMeshes = []; // meshes used for collision
+
+// ─── PLANT DATA ──────────────────────────────────────
+const PLANT_INFO = {
+  // Desert plants
+  saguaro: { name: 'Saguaro Cactus', desc: 'The iconic Sonoran Desert cactus. Can grow over 50 feet tall and live for 150+ years. Stores up to 2000 gallons of water in its tissues.' },
+  barrel: { name: 'Barrel Cactus', desc: 'A round, ribbed cactus native to the southwestern US. Its spherical shape minimizes surface area, reducing water loss in arid conditions.' },
+  aloe: { name: 'Aloe Vera', desc: 'A succulent with medicinal properties used for centuries. Its gel soothes burns and wounds. Thrives in hot, dry climates with minimal water.' },
+  agave: { name: 'Agave', desc: 'A succulent genus with over 200 species. The sap is used to produce tequila and mezcal. Some species flower only once after 10-30 years.' },
+  desert_rose: { name: 'Desert Rose', desc: 'Adenium obesum — a stunning succulent with a thick caudex trunk and vibrant pink flowers. Native to the deserts of Africa and Arabia.' },
+  prickly_pear: { name: 'Prickly Pear Cactus', desc: 'Opuntia species produce edible pads (nopales) and sweet fruits (tunas). A staple food in Mexican cuisine and an important drought-resistant crop.' },
+
+  // Jungle plants
+  monstera: { name: 'Monstera Deliciosa', desc: 'Known as the Swiss Cheese Plant for its split leaves. Native to Central American rainforests. The fruit is edible and tastes like tropical pudding.' },
+  fern: { name: 'Bird Nest Fern', desc: 'Asplenium nidus — an epiphytic fern that grows in tree canopies. Its broad arching leaves form a distinctive rosette pattern.' },
+  banana: { name: 'Banana Plant', desc: 'Musa species — technically the world largest herbaceous flower. Not a tree despite its size. Produces the beloved tropical fruit.' },
+  heliconia: { name: 'Heliconia', desc: 'Lobster Claw — striking tropical flowers that attract hummingbirds. Native to Central and South America. Some flowers weigh up to 5 pounds!' },
+  palm: { name: 'Traveler Palm', desc: 'Ravenala madagascariensis — endemic to Madagascar. Water collects between leaf stems at the crown, providing drinking water for travelers.' },
+  philodendron: { name: 'Philodendron', desc: 'A large genus of over 460 species of flowering plants. Many are popular houseplants. Some species have leaves over 5 feet long.' },
+
+  // House plants
+  snake: { name: 'Snake Plant', desc: 'Sansevieria trifasciata — one of the toughest houseplants. Converts CO2 to oxygen at night, making it ideal for bedrooms. NASA rated it a top air purifier.' },
+  pothos: { name: 'Golden Pothos', desc: 'Epipremnum aureum — a nearly indestructible trailing vine. Excellent at removing formaldehyde and xylene from indoor air.' },
+  fiddle: { name: 'Fiddle Leaf Fig', desc: 'Ficus lyrata — a trendy houseplant with large violin-shaped leaves. Native to western Africa. Requires bright indirect light.' },
+  peace_lily: { name: 'Peace Lily', desc: 'Spathiphyllum — an elegant flowering plant that tolerates low light. Its white spathes bloom periodically. NASA lists it as a top air-purifying plant.' },
+  spider: { name: 'Spider Plant', desc: 'Chlorophytum comosum — produces baby plantlets that dangle from the mother plant. One of the easiest houseplants to propagate.' },
+  succulent: { name: 'Echeveria', desc: 'A rosette-forming succulent with thick fleshy leaves. Over 1500 species exist. Drought tolerant and perfect for beginners.' },
+
+  // Bonsai
+  jin_bonsai: { name: 'Jin Technique Bonsai', desc: 'The jin technique creates the illusion of age by stripping bark from deadwood branches. Commonly used on Japanese White Pine and Juniper.' },
+  juniper: { name: 'Juniper Bonsai', desc: 'Juniperus species are the most popular bonsai trees. Can live for centuries. The Shimpunkin juniper at the Japanese Bonsai Museum is estimated at 500 years old.' },
+  ficus_bonsai: { name: 'Ficus Bonsai', desc: 'Ficus retusa/benjamina — the most popular indoor bonsai. Tolerates indoor conditions better than most species. Can produce aerial roots like its tropical relatives.' },
+  pine_bonsai: { name: 'Black Pine Bonsai', desc: 'Pinus thunbergii — the most iconic bonsai species in Japan. Requires full sun and excellent drainage. The needle pairs indicate the specific cultivar.' },
+  maple_bonsai: { name: 'Japanese Maple Bonsai', desc: 'Acer palmatum — prized for its delicate leaves and spectacular fall color. Requires protection from hot afternoon sun and cold drafts.' },
+  jade: { name: 'Jade Plant Bonsai', desc: 'Crassula ovata — a succulent commonly styled as bonsai. Symbolizes good luck and prosperity. Can live for decades indoors with minimal care.' },
+};
+
+// ─── INIT ────────────────────────────────────────────
+function init() {
+  clock = new THREE.Clock();
+
+  // Scene
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87CEEB);
+  scene.fog = new THREE.FogExp2(0x9dc4e0, 0.008);
+
+  // Camera
+  camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 500);
+  camera.position.copy(playerPos);
+
+  // Renderer
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+  document.body.appendChild(renderer.domElement);
+
+  // Controls
+  controls = new PointerLockControls(camera, document.body);
+
+  // Lighting
+  setupLighting();
+
+  // World
+  buildWorld();
+
+  // Minimap
+  setupMinimap();
+
+  // Events
+  setupEvents();
+
+  // Start
+  animate();
+}
+
+// ─── LIGHTING ────────────────────────────────────────
+function setupLighting() {
+  const ambient = new THREE.AmbientLight(0x6688aa, 0.6);
+  scene.add(ambient);
+
+  const hemi = new THREE.HemisphereLight(0x87CEEB, 0x3a5a2a, 0.5);
+  scene.add(hemi);
+
+  const sun = new THREE.DirectionalLight(0xfff4e0, 1.8);
+  sun.position.set(30, 50, 40);
+  sun.castShadow = true;
+  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.camera.left = -60;
+  sun.shadow.camera.right = 60;
+  sun.shadow.camera.top = 60;
+  sun.shadow.camera.bottom = -60;
+  sun.shadow.camera.near = 1;
+  sun.shadow.camera.far = 120;
+  sun.shadow.bias = -0.001;
+  scene.add(sun);
+
+  // Warm fill light
+  const fill = new THREE.DirectionalLight(0xffe0c0, 0.3);
+  fill.position.set(-20, 15, -20);
+  scene.add(fill);
+}
+
+// ─── MATERIALS ───────────────────────────────────────
+const MAT = {
+  frame: new THREE.MeshStandardMaterial({ color: 0x4a4a4a, metalness: 0.8, roughness: 0.3 }),
+  glass: new THREE.MeshPhysicalMaterial({
+    color: 0xffffff, transparent: true, opacity: 0.15, roughness: 0.05, metalness: 0,
+    transmission: 0.9, thickness: 0.1, ior: 1.5, side: THREE.DoubleSide,
+  }),
+  glassGreen: new THREE.MeshPhysicalMaterial({
+    color: 0x88cc88, transparent: true, opacity: 0.12, roughness: 0.1, metalness: 0,
+    transmission: 0.85, thickness: 0.1, ior: 1.5, side: THREE.DoubleSide,
+  }),
+  ground: new THREE.MeshStandardMaterial({ color: 0x5a7a3a, roughness: 0.95 }),
+  path: new THREE.MeshStandardMaterial({ color: 0x9a9080, roughness: 0.9 }),
+  wood: new THREE.MeshStandardMaterial({ color: 0x8B6914, roughness: 0.8 }),
+  woodDark: new THREE.MeshStandardMaterial({ color: 0x5a4020, roughness: 0.8 }),
+  door: new THREE.MeshStandardMaterial({ color: 0x6B3A2A, roughness: 0.7 }),
+  metal: new THREE.MeshStandardMaterial({ color: 0x888888, metalness: 0.9, roughness: 0.2 }),
+  sand: new THREE.MeshStandardMaterial({ color: 0xd4b878, roughness: 1 }),
+  soil: new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 1 }),
+  tile: new THREE.MeshStandardMaterial({ color: 0x8a8a80, roughness: 0.7 }),
+  stone: new THREE.MeshStandardMaterial({ color: 0x909088, roughness: 0.9 }),
+  white: new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.5 }),
+};
+
+// ─── BUILD WORLD ─────────────────────────────────────
+function buildWorld() {
+  buildGround();
+  buildPathways();
+
+  // Greenhouse positions: left to right
+  const positions = [
+    { x: -22, name: 'Desert', theme: 'desert' },
+    { x: -2, name: 'Jungle', theme: 'jungle' },
+    { x: 18, name: 'House Plants', theme: 'house' },
+    { x: 38, name: 'Bonsai', theme: 'bonsai' },
+  ];
+
+  // Build tunnels between greenhouses first
+  for (let i = 0; i < positions.length - 1; i++) {
+    const x1 = positions[i].x + GH_W / 2;
+    const x2 = positions[i + 1].x - GH_W / 2;
+    const tx = (x1 + x2) / 2;
+    const tw = x2 - x1;
+    buildTunnel(tx, 0, -GH_D / 2, tw, GH_D);
+  }
+
+  // Build greenhouses
+  positions.forEach((p, idx) => {
+    buildGreenhouse(p.x, 0, -GH_D / 2, p.name, p.theme, idx);
+    // Add door on front side
+    buildDoor(p.x, 0, -GH_D / 2, p.name);
+  });
+
+  // Entrance sign
+  buildEntranceSign(0, 0, GH_D / 2 + 6);
+}
+
+// ─── GROUND ──────────────────────────────────────────
+function buildGround() {
+  // Main ground
+  const groundGeo = new THREE.PlaneGeometry(200, 200);
+  const ground = new THREE.Mesh(groundGeo, MAT.ground);
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // Decorative bushes outside
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 35 + Math.random() * 50;
+    const x = Math.cos(angle) * dist;
+    const z = Math.sin(angle) * dist;
+    // Skip if too close to front area
+    if (z > 15) continue;
+    buildBush(x, 0, z, 0.8 + Math.random() * 1.2);
+  }
+
+  // Some trees outside
+  for (let i = 0; i < 12; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 40 + Math.random() * 40;
+    const x = Math.cos(angle) * dist;
+    const z = Math.sin(angle) * dist;
+    if (z > 15) continue;
+    buildTree(x, 0, z);
+  }
+}
+
+function buildPathways() {
+  // Main front path
+  const pathGeo = new THREE.PlaneGeometry(50, 8);
+  const path = new THREE.Mesh(pathGeo, MAT.path);
+  path.rotation.x = -Math.PI / 2;
+  path.position.set(8, 0.02, 5);
+  path.receiveShadow = true;
+  scene.add(path);
+
+  // Side paths to each greenhouse
+  const positions = [-22, -2, 18, 38];
+  positions.forEach(x => {
+    const sidePath = new THREE.Mesh(
+      new THREE.PlaneGeometry(3, GH_D / 2 + 2),
+      MAT.path
+    );
+    sidePath.rotation.x = -Math.PI / 2;
+    sidePath.position.set(x, 0.02, -GH_D / 4 + 2);
+    sidePath.receiveShadow = true;
+    scene.add(sidePath);
+  });
+}
+
+// ─── GREENHOUSE ──────────────────────────────────────
+function buildGreenhouse(cx, cy, cz, name, theme, idx) {
+  const hw = GH_W / 2, hd = GH_D / 2;
+  const group = new THREE.Group();
+  group.position.set(cx, cy, cz);
+
+  // Floor based on theme
+  let floorMat;
+  switch (theme) {
+    case 'desert': floorMat = MAT.sand; break;
+    case 'jungle': floorMat = MAT.soil; break;
+    case 'house': floorMat = MAT.tile; break;
+    case 'bonsai': floorMat = new THREE.MeshStandardMaterial({ color: 0x7a7a70, roughness: 0.8 }); break;
+    default: floorMat = MAT.ground;
+  }
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(GH_W - 0.5, GH_D - 0.5), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.05;
+  floor.receiveShadow = true;
+  group.add(floor);
+
+  // Walls (semi-transparent glass panels)
+  buildWall(group, GH_W, GH_H, 0, GH_H / 2, -hd, 'z'); // back wall
+  buildWall(group, GH_W, GH_H, 0, GH_H / 2, hd, 'z');   // front wall (with door gap)
+  buildWall(group, GH_D, GH_H, -hw, GH_H / 2, 0, 'x');  // left wall
+  buildWall(group, GH_D, GH_H, hw, GH_H / 2, 0, 'x');   // right wall
+
+  // Register wall segments for collision
+  const wallThickness = 0.3;
+  // Back wall
+  addWallSegment(cx - hw, 0, cz - hd, GH_W, GH_H, wallThickness);
+  // Front wall (with door opening in center)
+  addWallSegment(cx - hw, 0, cz + hd, 4, GH_H, wallThickness);  // left of door
+  addWallSegment(cx + hw - 4, 0, cz + hd, 4, GH_H, wallThickness);  // right of door
+  // Left wall
+  addWallSegment(cx - hw, 0, cz - hd + wallThickness, wallThickness, GH_H, GH_D - wallThickness * 2);
+  // Right wall
+  addWallSegment(cx + hw - wallThickness, 0, cz - hd + wallThickness, wallThickness, GH_H, GH_D - wallThickness * 2);
+
+  // Metal frame - vertical posts at corners
+  const postGeo = new THREE.BoxGeometry(0.15, GH_H + ROOF_H, 0.15);
+  [[-hw, -hd], [-hw, hd], [hw, -hd], [hw, hd]].forEach(([px, pz]) => {
+    const post = new THREE.Mesh(postGeo, MAT.frame);
+    post.position.set(px, (GH_H + ROOF_H) / 2, pz);
+    post.castShadow = true;
+    group.add(post);
+  });
+
+  // Horizontal frame members
+  const hFrameGeo1 = new THREE.BoxGeometry(GH_W + 0.15, 0.12, 0.12);
+  [-hd, -hd / 2, 0, hd / 2, hd].forEach(pz => {
+    [-hw, hw].forEach(px => {
+      const f = new THREE.Mesh(hFrameGeo1, MAT.frame);
+      f.position.set(px, GH_H, pz);
+      group.add(f);
+    });
+  });
+
+  // Frame along length
+  const hFrameGeo2 = new THREE.BoxGeometry(0.12, 0.12, GH_D + 0.15);
+  [-hw, hw].forEach(px => {
+    [GH_H / 2, GH_H].forEach(py => {
+      const f = new THREE.Mesh(hFrameGeo2, MAT.frame);
+      f.position.set(px, py, 0);
+      group.add(f);
+    });
+  });
+
+  // Roof (peaked, glass panels)
+  buildRoof(group);
+
+  // Theme sign above door
+  const signMesh = buildSign(name, cx, GH_H + 0.5, cz + hd + 0.8);
+  scene.add(signMesh);
+
+  // Add themed plants
+  switch (theme) {
+    case 'desert': buildDesertPlants(group, cx, cz); break;
+    case 'jungle': buildJunglePlants(group, cx, cz); break;
+    case 'house': buildHousePlants(group, cx, cz); break;
+    case 'bonsai': buildBonsaiPlants(group, cx, cz); break;
+  }
+
+  scene.add(group);
+}
+
+function buildWall(parent, width, height, lx, ly, lz, axis) {
+  // Glass panel
+  const geo = axis === 'z'
+    ? new THREE.PlaneGeometry(width, height)
+    : new THREE.PlaneGeometry(height, width);
+  const wall = new THREE.Mesh(geo, MAT.glassGreen);
+  wall.position.set(lx, ly, lz);
+  if (axis === 'x') {
+    wall.rotation.y = Math.PI / 2;
+  }
+  wall.castShadow = true;
+  wall.receiveShadow = true;
+  parent.add(wall);
+}
+
+function buildRoof(parent) {
+  const hw = GH_W / 2, hd = GH_D / 2;
+
+  // Two sloped glass roof panels
+  const roofPanelGeo = new THREE.PlaneGeometry(
+    Math.sqrt(hw * hw + ROOF_H * ROOF_H) + 0.1,
+    GH_D + 0.2
+  );
+
+  // Left roof panel
+  const roofL = new THREE.Mesh(roofPanelGeo, MAT.glass);
+  const roofAngleL = Math.atan2(ROOF_H, hw);
+  roofL.position.set(-hw / 2, GH_H + ROOF_H / 2, 0);
+  roofL.rotation.z = roofAngleL;
+  roofL.rotation.y = Math.PI / 2;
+  roofL.castShadow = true;
+  parent.add(roofL);
+
+  // Right roof panel
+  const roofR = new THREE.Mesh(roofPanelGeo, MAT.glass);
+  roofR.position.set(hw / 2, GH_H + ROOF_H / 2, 0);
+  roofR.rotation.z = -roofAngleL;
+  roofR.rotation.y = Math.PI / 2;
+  roofR.castShadow = true;
+  parent.add(roofR);
+
+  // Ridge beam
+  const ridgeGeo = new THREE.BoxGeometry(0.15, 0.15, GH_D + 0.3);
+  const ridge = new THREE.Mesh(ridgeGeo, MAT.frame);
+  ridge.position.set(0, GH_H + ROOF_H, 0);
+  parent.add(ridge);
+
+  // Eave beams
+  const eaveGeo = new THREE.BoxGeometry(0.12, 0.12, GH_D + 0.3);
+  [-hw, hw].forEach(px => {
+    const eave = new THREE.Mesh(eaveGeo, MAT.frame);
+    eave.position.set(px, GH_H, 0);
+    parent.add(eave);
+  });
+
+  // Cross beams on roof
+  const crossGeo = new THREE.BoxGeometry(GH_W + 0.3, 0.1, 0.1);
+  for (let z = -hd; z <= hd; z += 4) {
+    const cross = new THREE.Mesh(crossGeo, MAT.frame);
+    cross.position.set(0, GH_H + ROOF_H * 0.5, z);
+    // Tilt to match roof
+    cross.rotation.x = Math.atan2(ROOF_H, hw);
+    parent.add(cross);
+  }
+}
+
+function addWallSegment(x, y, z, w, h, d) {
+  // Add as a box for collision
+  wallSegments.push({
+    minX: x - w / 2, maxX: x + w / 2,
+    minY: y, maxY: y + h,
+    minZ: z - d / 2, maxZ: z + d / 2,
+  });
+}
+
+// ─── TUNNEL ──────────────────────────────────────────
+function buildTunnel(cx, cy, cz, width, depth) {
+  const group = new THREE.Group();
+  group.position.set(cx, cy, cz);
+  const hw = width / 2, hd = depth / 2;
+
+  // Floor
+  const floor = new THREE.Mesh(
+    new THREE.PlaneGeometry(width - 0.5, depth - 0.5),
+    MAT.path
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.06;
+  floor.receiveShadow = true;
+  group.add(floor);
+
+  // Walls
+  buildWall(group, depth, TUNNEL_H, -hw, TUNNEL_H / 2, 0, 'x');
+  buildWall(group, depth, TUNNEL_H, hw, TUNNEL_H / 2, 0, 'x');
+
+  // Register tunnel walls for collision
+  const wt = 0.3;
+  addWallSegment(cx - hw, 0, cz - hd + wt, wt, TUNNEL_H, depth - wt * 2);
+  addWallSegment(cx + hw - wt, 0, cz - hd + wt, wt, TUNNEL_H, depth - wt * 2);
+
+  // Frame
+  const postGeo = new THREE.BoxGeometry(0.12, TUNNEL_H + 1, 0.12);
+  [[-hw, -hd], [-hw, hd], [hw, -hd], [hw, hd]].forEach(([px, pz]) => {
+    const post = new THREE.Mesh(postGeo, MAT.frame);
+    post.position.set(px, (TUNNEL_H + 1) / 2, pz);
+    group.add(post);
+  });
+
+  // Arched roof (simplified as flat with slight peak)
+  const roofGeo = new THREE.BoxGeometry(width + 0.2, 0.1, depth + 0.2);
+  const roof = new THREE.Mesh(roofGeo, MAT.glass);
+  roof.position.set(0, TUNNEL_H + 0.5, 0);
+  group.add(roof);
+
+  // Top frame
+  const topFrameGeo = new THREE.BoxGeometry(width + 0.3, 0.12, 0.12);
+  [-hd, 0, hd].forEach(pz => {
+    [-hw, hw].forEach(px => {
+      const f = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, 0.1, 0.1),
+        MAT.frame
+      );
+      f.position.set(px, TUNNEL_H + 0.5, pz);
+      group.add(f);
+    });
+  });
+
+  // Tunnel lights
+  const tunnelLight = new THREE.PointLight(0xffeedd, 0.5, 15);
+  tunnelLight.position.set(0, TUNNEL_H - 0.3, 0);
+  group.add(tunnelLight);
+
+  scene.add(group);
+}
+
+// ─── DOOR ────────────────────────────────────────────
+function buildDoor(cx, cy, cz, greenhouseName) {
+  const group = new THREE.Group();
+  group.position.set(cx, cy, cz);
+  const doorW = 1.6, doorH = 3.5;
+
+  // Door panel (two halves for double door)
+  const doorGeo = new THREE.BoxGeometry(doorW / 2 - 0.05, doorH, 0.12);
+
+  const doorL = new THREE.Mesh(doorGeo, MAT.door);
+  doorL.position.set(-doorW / 4, doorH / 2, 0.5);
+  doorL.castShadow = true;
+  doorL.userData = { type: 'door', side: 'left', greenhouse: greenhouseName, group: group };
+  group.add(doorL);
+
+  const doorR = new THREE.Mesh(doorGeo, MAT.door);
+  doorR.position.set(doorW / 4, doorH / 2, 0.5);
+  doorR.castShadow = true;
+  doorR.userData = { type: 'door', side: 'right', greenhouse: greenhouseName, group: group };
+  group.add(doorR);
+
+  // Door handles
+  const handleGeo = new THREE.SphereGeometry(0.06, 8, 8);
+  const handleL = new THREE.Mesh(handleGeo, MAT.metal);
+  handleL.position.set(-0.05, doorH * 0.45, 0.6);
+  group.add(handleL);
+  const handleR = new THREE.Mesh(handleGeo, MAT.metal);
+  handleR.position.set(0.05, doorH * 0.45, 0.6);
+  group.add(handleR);
+
+  // Door frame
+  const frameTop = new THREE.Mesh(
+    new THREE.BoxGeometry(doorW + 0.3, 0.15, 0.3),
+    MAT.woodDark
+  );
+  frameTop.position.set(0, doorH + 0.07, 0.5);
+  group.add(frameTop);
+
+  const frameL = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, doorH, 0.3),
+    MAT.woodDark
+  );
+  frameL.position.set(-doorW / 2 - 0.07, doorH / 2, 0.5);
+  group.add(frameL);
+
+  const frameR = new THREE.Mesh(
+    new THREE.BoxGeometry(0.15, doorH, 0.3),
+    MAT.woodDark
+  );
+  frameR.position.set(doorW / 2 + 0.07, doorH / 2, 0.5);
+  group.add(frameR);
+
+  // Make doors clickable
+  doorL.userData.clickable = true;
+  doorR.userData.clickable = true;
+  interactables.push(doorL, doorR);
+
+  // Store door state
+  doorStates[greenhouseName] = { open: false, leftDoor: doorL, rightDoor: doorR };
+
+  scene.add(group);
+}
+
+function toggleDoor(greenhouseName) {
+  const state = doorStates[greenhouseName];
+  if (!state) return;
+  state.open = !state.open;
+  const targetAngle = state.open ? Math.PI / 2 : 0;
+
+  // Animate doors open/close
+  const startAngleL = state.leftDoor.rotation.y;
+  const startAngleR = state.rightDoor.rotation.y;
+  const startTime = clock.getElapsedTime();
+  const duration = 0.6;
+
+  function animateDoor() {
+    const t = Math.min((clock.getElapsedTime() - startTime) / duration, 1);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+    state.leftDoor.rotation.y = startAngleL + (-targetAngle - startAngleL) * ease;
+    state.rightDoor.rotation.y = startAngleR + (targetAngle - startAngleR) * ease;
+
+    if (t < 1) requestAnimationFrame(animateDoor);
+  }
+  animateDoor();
+
+  showPopup(
+    `${greenhouseName} Door`,
+    state.open ? `${greenhouseName} greenhouse door is now OPEN. Walk inside!` : `Door closed.`
+  );
+}
+
+// ─── SIGN ────────────────────────────────────────────
+function buildSign(text, x, y, z) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 512;
+  canvas.height = 128;
+
+  // Background
+  ctx.fillStyle = '#3a5a2a';
+  ctx.fillRect(0, 0, 512, 128);
+  ctx.strokeStyle = '#ffd65a';
+  ctx.lineWidth = 4;
+  ctx.strokeRect(4, 4, 504, 120);
+
+  // Text
+  ctx.fillStyle = '#ffd65a';
+  ctx.font = 'bold 48px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, 256, 64);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const signMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+
+  const signGeo = new THREE.PlaneGeometry(4, 1);
+  const sign = new THREE.Mesh(signGeo, signMat);
+  sign.position.set(x, y, z);
+  sign.userData = { type: 'sign', text: text };
+  interactables.push(sign);
+  return sign;
+}
+
+function buildEntranceSign(x, y, z) {
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = 1024;
+  canvas.height = 256;
+
+  ctx.fillStyle = '#2a4a1a';
+  ctx.fillRect(0, 0, 1024, 256);
+  ctx.strokeStyle = '#a8d89a';
+  ctx.lineWidth = 6;
+  ctx.strokeRect(6, 6, 1012, 244);
+
+  ctx.fillStyle = '#a8d89a';
+  ctx.font = 'bold 64px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('GREENHOUSE NURSERY', 512, 80);
+
+  ctx.font = '32px sans-serif';
+  ctx.fillStyle = '#8ab88a';
+  ctx.fillText('Desert  ·  Jungle  ·  House Plants  ·  Bonsai', 512, 160);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearFilter;
+  const signMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+
+  const signGeo = new THREE.PlaneGeometry(10, 2.5);
+  const sign = new THREE.Mesh(signGeo, signMat);
+  sign.position.set(x, 3, z);
+  sign.userData = { type: 'sign', text: 'Greenhouse Nursery' };
+  interactables.push(sign);
+  scene.add(sign);
+
+  // Sign posts
+  const postGeo = new THREE.CylinderGeometry(0.1, 0.1, 3, 8);
+  [-4.5, 4.5].forEach(px => {
+    const post = new THREE.Mesh(postGeo, MAT.woodDark);
+    post.position.set(x + px, 1.5, z);
+    scene.add(post);
+  });
+}
+
+// ─── DESERT PLANTS ───────────────────────────────────
+function buildDesertPlants(group, cx, cz) {
+  // Rocks scattered around
+  for (let i = 0; i < 8; i++) {
+    const x = (Math.random() - 0.5) * (GH_W - 3);
+    const z = (Math.random() - 0.5) * (GH_D - 4);
+    const s = 0.3 + Math.random() * 0.6;
+    const rockGeo = new THREE.DodecahedronGeometry(s, 1);
+    const rock = new THREE.Mesh(rockGeo, MAT.stone);
+    rock.position.set(x, s * 0.5, z);
+    rock.rotation.set(Math.random(), Math.random(), Math.random());
+    rock.castShadow = true;
+    group.add(rock);
+  }
+
+  // Saguaro cacti
+  const saguaroPositions = [
+    [-4, -6], [4, -5], [-3, 4],
+  ];
+  saguaroPositions.forEach(([px, pz]) => {
+    const cactus = buildSaguaroCactus(1 + Math.random() * 0.5);
+    cactus.position.set(px, 0, pz);
+    group.add(cactus);
+  });
+
+  // Barrel cacti
+  [[-5, -3], [3, 2], [-2, -8], [5, 6], [0, -2]].forEach(([px, pz], i) => {
+    const barrel = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.5 + (i % 3) * 0.15, 0.6 + (i % 3) * 0.15, 1.2 + (i % 3) * 0.3, 12),
+      new THREE.MeshStandardMaterial({ color: 0x4a7a2a, roughness: 0.8 })
+    );
+    barrel.position.set(px, 0.6 + (i % 3) * 0.15, pz);
+    barrel.castShadow = true;
+    barrel.userData = { type: 'plant', plantId: 'barrel', greenhouse: 'Desert' };
+    barrel.userData.clickable = true;
+    interactables.push(barrel);
+    group.add(barrel);
+  });
+
+  // Aloe clusters
+  [[-6, 0], [6, -4], [0, 7]].forEach(([px, pz]) => {
+    const aloe = buildAloe();
+    aloe.position.set(px, 0, pz);
+    group.add(aloe);
+  });
+
+  // Small succulents in pots
+  for (let i = 0; i < 5; i++) {
+    const pot = buildPot(0.25, 0.3);
+    pot.position.set(-5 + i * 2.5, 0, 8);
+    group.add(pot);
+  }
+}
+
+function buildSaguaroCactus(scale) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x3a6a2a, roughness: 0.8 });
+
+  // Main trunk
+  const trunkH = 3 * scale;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3 * scale, 0.35 * scale, trunkH, 10),
+    mat
+  );
+  trunk.position.y = trunkH / 2;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // Arms
+  if (scale > 0.8) {
+    const armPositions = [
+      { y: trunkH * 0.6, dir: 1, len: 1.2 },
+      { y: trunkH * 0.5, dir: -1, len: 1.0 },
+    ];
+    if (scale > 1.2) armPositions.push({ y: trunkH * 0.7, dir: 1, len: 0.8 });
+
+    armPositions.forEach(a => {
+      const armGroup = new THREE.Group();
+      const armH = a.len * scale;
+      const arm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15 * scale, 0.2 * scale, armH, 8),
+        mat
+      );
+      arm.position.y = armH / 2;
+      armGroup.add(arm);
+
+      // Bend arm upward
+      const tip = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.12 * scale, 0.15 * scale, armH * 0.6, 8),
+        mat
+      );
+      tip.position.set(a.dir * armH * 0.3, armH * 0.6, 0);
+      tip.rotation.z = -a.dir * 0.8;
+      tip.castShadow = true;
+      armGroup.add(tip);
+
+      armGroup.position.set(a.dir * 0.3 * scale, a.y, 0);
+      armGroup.rotation.z = a.dir * 1.2;
+      group.add(armGroup);
+    });
+  }
+
+  // Make clickable
+  trunk.userData = { type: 'plant', plantId: 'saguaro', greenhouse: 'Desert' };
+  trunk.userData.clickable = true;
+  interactables.push(trunk);
+
+  return group;
+}
+
+function buildAloe() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5a8a4a, roughness: 0.7 });
+
+  for (let i = 0; i < 10; i++) {
+    const angle = (i / 10) * Math.PI * 2;
+    const leafGeo = new THREE.ConeGeometry(0.08, 0.6, 6);
+    const leaf = new THREE.Mesh(leafGeo, mat);
+    leaf.position.set(
+      Math.cos(angle) * 0.25,
+      0.2,
+      Math.sin(angle) * 0.25
+    );
+    leaf.rotation.z = Math.cos(angle) * 0.5;
+    leaf.rotation.x = -Math.sin(angle) * 0.5;
+    leaf.castShadow = true;
+    group.add(leaf);
+  }
+
+  group.children[0].userData = { type: 'plant', plantId: 'aloe', greenhouse: 'Desert' };
+  group.children[0].userData.clickable = true;
+  interactables.push(group.children[0]);
+
+  return group;
+}
+
+// ─── JUNGLE PLANTS ───────────────────────────────────
+function buildJunglePlants(group, cx, cz) {
+  // Dense ferns
+  for (let i = 0; i < 10; i++) {
+    const x = (Math.random() - 0.5) * (GH_W - 3);
+    const z = (Math.random() - 0.5) * (GH_D - 4);
+    const fern = buildFern(0.6 + Math.random() * 0.4);
+    fern.position.set(x, 0, z);
+    group.add(fern);
+  }
+
+  // Monstera plants
+  [[-5, -6], [5, -5], [-4, 5], [4, 6], [0, -9]].forEach(([px, pz], i) => {
+    const monstera = buildMonstera(0.7 + (i % 3) * 0.2);
+    monstera.position.set(px, 0, pz);
+    group.add(monstera);
+  });
+
+  // Banana plants (tall)
+  [[-6, 2], [6, -2]].forEach(([px, pz]) => {
+    const banana = buildBananaPlant();
+    banana.position.set(px, 0, pz);
+    group.add(banana);
+  });
+
+  // Heliconia (colorful flowers)
+  [[-2, -4], [3, 3], [-5, 7]].forEach(([px, pz]) => {
+    const heliconia = buildHeliconia();
+    heliconia.position.set(px, 0, pz);
+    group.add(heliconia);
+  });
+
+  // Vines hanging from roof
+  for (let i = 0; i < 6; i++) {
+    const x = (Math.random() - 0.5) * (GH_W - 2);
+    const z = (Math.random() - 0.5) * (GH_D - 2);
+    buildVine(group, x, GH_H - 0.5, z);
+  }
+
+  // Ground cover
+  const coverGeo = new THREE.PlaneGeometry(GH_W - 1, GH_D - 1);
+  const coverMat = new THREE.MeshStandardMaterial({
+    color: 0x2a4a1a, roughness: 1, transparent: true, opacity: 0.4,
+  });
+  const cover = new THREE.Mesh(coverGeo, coverMat);
+  cover.rotation.x = -Math.PI / 2;
+  cover.position.y = 0.07;
+  group.add(cover);
+}
+
+function buildFern(scale) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x3a7a2a, roughness: 0.8, side: THREE.DoubleSide });
+
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const frond = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.3 * scale, 1.5 * scale),
+      mat
+    );
+    frond.position.set(
+      Math.cos(angle) * 0.5 * scale,
+      0.3 * scale,
+      Math.sin(angle) * 0.5 * scale
+    );
+    frond.rotation.y = angle;
+    frond.rotation.x = 0.5;
+    frond.castShadow = true;
+    group.add(frond);
+  }
+
+  group.children[0].userData = { type: 'plant', plantId: 'fern', greenhouse: 'Jungle' };
+  group.children[0].userData.clickable = true;
+  interactables.push(group.children[0]);
+
+  return group;
+}
+
+function buildMonstera(scale) {
+  const group = new THREE.Group();
+
+  // Stem
+  const stemMat = new THREE.MeshStandardMaterial({ color: 0x4a6a2a, roughness: 0.8 });
+  const stemH = 2 * scale;
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04 * scale, 0.06 * scale, stemH, 8),
+    stemMat
+  );
+  stem.position.y = stemH / 2;
+  stem.castShadow = true;
+  group.add(stem);
+
+  // Large split leaves
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2a6a1a, roughness: 0.7, side: THREE.DoubleSide });
+  const leafAngles = [0, Math.PI * 0.6, Math.PI * 1.2, Math.PI * 1.7];
+  leafAngles.forEach((angle, i) => {
+    const leaf = new THREE.Mesh(
+      new THREE.CircleGeometry(0.5 * scale, 8),
+      leafMat
+    );
+    leaf.position.set(
+      Math.cos(angle) * 0.4 * scale,
+      stemH * (0.5 + i * 0.12),
+      Math.sin(angle) * 0.4 * scale
+    );
+    leaf.rotation.y = angle;
+    leaf.rotation.x = -0.3 - i * 0.05;
+    leaf.castShadow = true;
+    group.add(leaf);
+  });
+
+  stem.userData = { type: 'plant', plantId: 'monstera', greenhouse: 'Jungle' };
+  stem.userData.clickable = true;
+  interactables.push(stem);
+
+  return group;
+}
+
+function buildBananaPlant() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x4a8a2a, roughness: 0.7, side: THREE.DoubleSide });
+
+  // Trunk
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.18, 4, 8),
+    new THREE.MeshStandardMaterial({ color: 0x6a8a3a, roughness: 0.8 })
+  );
+  trunk.position.y = 2;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // Large banana leaves
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const leaf = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.8, 2.5),
+      mat
+    );
+    leaf.position.set(
+      Math.cos(angle) * 0.3,
+      3.5 + i * 0.1,
+      Math.sin(angle) * 0.3
+    );
+    leaf.rotation.y = angle;
+    leaf.rotation.x = 0.6 + i * 0.05;
+    leaf.castShadow = true;
+    group.add(leaf);
+  }
+
+  // Fruit cluster
+  const fruitMat = new THREE.MeshStandardMaterial({ color: 0xc8c83a, roughness: 0.6 });
+  for (let i = 0; i < 5; i++) {
+    const fruit = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.05, 0.25, 4, 8),
+      fruitMat
+    );
+    fruit.position.set(0.15, 3, 0.15);
+    fruit.rotation.z = Math.PI / 3;
+    fruit.rotation.y = (i / 5) * Math.PI;
+    group.add(fruit);
+  }
+
+  trunk.userData = { type: 'plant', plantId: 'banana', greenhouse: 'Jungle' };
+  trunk.userData.clickable = true;
+  interactables.push(trunk);
+
+  return group;
+}
+
+function buildHeliconia() {
+  const group = new THREE.Group();
+
+  // Stem
+  const stem = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.03, 0.04, 2, 8),
+    new THREE.MeshStandardMaterial({ color: 0x3a6a2a, roughness: 0.8 })
+  );
+  stem.position.y = 1;
+  stem.castShadow = true;
+  group.add(stem);
+
+  // Red/orange flowers
+  const flowerMat = new THREE.MeshStandardMaterial({ color: 0xcc3322, roughness: 0.5 });
+  for (let i = 0; i < 5; i++) {
+    const flower = new THREE.Mesh(
+      new THREE.ConeGeometry(0.08, 0.3, 6),
+      flowerMat
+    );
+    flower.position.set(0.05, 2 - i * 0.15, 0);
+    flower.rotation.z = -0.3;
+    group.add(flower);
+  }
+
+  stem.userData = { type: 'plant', plantId: 'heliconia', greenhouse: 'Jungle' };
+  stem.userData.clickable = true;
+  interactables.push(stem);
+
+  return group;
+}
+
+function buildVine(parent, x, y, z) {
+  const vineMat = new THREE.MeshStandardMaterial({ color: 0x3a7a2a, roughness: 0.8 });
+  const segments = 5 + Math.floor(Math.random() * 5);
+  const length = 1 + Math.random() * 1.5;
+
+  for (let i = 0; i < segments; i++) {
+    const segH = length / segments;
+    const seg = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.02, 0.02, segH, 4),
+      vineMat
+    );
+    seg.position.set(
+      x + Math.sin(i * 0.5) * 0.1,
+      y - i * segH,
+      z + Math.cos(i * 0.5) * 0.1
+    );
+    parent.add(seg);
+  }
+}
+
+// ─── HOUSE PLANTS ────────────────────────────────────
+function buildHousePlants(group, cx, cz) {
+  // Shelving units along walls
+  buildShelf(group, -GH_W / 2 + 0.8, 0, 0, 'x');
+  buildShelf(group, GH_W / 2 - 0.8, 0, 0, 'x');
+
+  // Center bench/table
+  const table = buildTable();
+  table.position.set(0, 0, 2);
+  group.add(table);
+
+  // Snake plants in pots
+  [[-3, -5], [3, -5], [-3, 5], [3, 5]].forEach(([px, pz]) => {
+    const pot = buildPot(0.3, 0.4);
+    pot.position.set(px, 0, pz);
+    const snake = buildSnakePlant();
+    snake.position.set(px, 0.4, pz);
+    group.add(pot);
+    group.add(snake);
+  });
+
+  // Pothos on shelves
+  [[-5, -2], [-5, 2], [5, -2], [5, 2]].forEach(([px, pz]) => {
+    const pot = buildPot(0.2, 0.25);
+    pot.position.set(px, 1.2, pz);
+    const pothos = buildPothos();
+    pothos.position.set(px, 0.25, pz);
+    group.add(pot);
+    group.add(pothos);
+  });
+
+  // Fiddle leaf fig
+  const fiddle = buildFiddleLeafFig();
+  fiddle.position.set(-4, 0, -7);
+  group.add(fiddle);
+
+  // Peace lily
+  const peaceLily = buildPeaceLily();
+  peaceLily.position.set(4, 0, -7);
+  group.add(peaceLily);
+
+  // Spider plant
+  const spider = buildSpiderPlant();
+  spider.position.set(0, 0, -8);
+  group.add(spider);
+
+  // Additional potted plants on table
+  const tablePot = buildPot(0.2, 0.25);
+  tablePot.position.set(0, 0.85, 2);
+  const succ = buildSucculent();
+  succ.position.set(0, 0.85, 2);
+  group.add(tablePot);
+  group.add(succ);
+}
+
+function buildShelf(parent, x, y, z, axis) {
+  const shelfMat = MAT.wood;
+  const shelfW = GH_D - 2;
+  const shelfDepth = 0.6;
+  const heights = [0.8, 1.6, 2.4];
+
+  heights.forEach(h => {
+    const shelf = new THREE.Mesh(
+      new THREE.BoxGeometry(axis === 'x' ? shelfDepth : shelfW, 0.06, axis === 'x' ? shelfW : shelfDepth),
+      shelfMat
+    );
+    shelf.position.set(x, h, z);
+    shelf.castShadow = true;
+    shelf.receiveShadow = true;
+    parent.add(shelf);
+  });
+
+  // Brackets
+  const bracketGeo = new THREE.BoxGeometry(0.06, 2.4, 0.06);
+  [-shelfW / 2 + 1, shelfW / 2 - 1].forEach(offset => {
+    const bracket = new THREE.Mesh(bracketGeo, MAT.metal);
+    if (axis === 'x') {
+      bracket.position.set(x + (shelfDepth - 0.1) / 2, 1.2, z + offset);
+    } else {
+      bracket.position.set(x + offset, 1.2, z + (shelfDepth - 0.1) / 2);
+    }
+    parent.add(bracket);
+  });
+}
+
+function buildTable() {
+  const group = new THREE.Group();
+
+  // Table top
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(3, 0.08, 1.2),
+    MAT.wood
+  );
+  top.position.y = 0.85;
+  top.castShadow = true;
+  top.receiveShadow = true;
+  group.add(top);
+
+  // Legs
+  const legGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.85, 8);
+  [[-1.3, -0.45], [-1.3, 0.45], [1.3, -0.45], [1.3, 0.45]].forEach(([lx, lz]) => {
+    const leg = new THREE.Mesh(legGeo, MAT.woodDark);
+    leg.position.set(lx, 0.425, lz);
+    leg.castShadow = true;
+    group.add(leg);
+  });
+
+  return group;
+}
+
+function buildPot(radius, height) {
+  const group = new THREE.Group();
+  const potMat = new THREE.MeshStandardMaterial({ color: 0xb8652a, roughness: 0.8 });
+
+  // Pot body
+  const pot = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.9, radius * 0.7, height, 12),
+    potMat
+  );
+  pot.position.y = height / 2;
+  pot.castShadow = true;
+  group.add(pot);
+
+  // Pot rim
+  const rim = new THREE.Mesh(
+    new THREE.TorusGeometry(radius * 0.9, 0.03, 8, 16),
+    potMat
+  );
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = height;
+  group.add(rim);
+
+  // Soil
+  const soil = new THREE.Mesh(
+    new THREE.CylinderGeometry(radius * 0.85, radius * 0.85, 0.05, 12),
+    MAT.soil
+  );
+  soil.position.y = height - 0.02;
+  group.add(soil);
+
+  return group;
+}
+
+function buildSnakePlant() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x3a7a2a, roughness: 0.6, side: THREE.DoubleSide });
+
+  for (let i = 0; i < 6; i++) {
+    const angle = (Math.random() - 0.5) * 0.5;
+    const h = 0.5 + Math.random() * 0.5;
+    const leaf = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.08, h),
+      mat
+    );
+    leaf.position.set(
+      (Math.random() - 0.5) * 0.15,
+      h / 2,
+      (Math.random() - 0.5) * 0.15
+    );
+    leaf.rotation.y = angle;
+    leaf.rotation.z = (Math.random() - 0.5) * 0.15;
+    leaf.castShadow = true;
+    group.add(leaf);
+  }
+
+  group.children[0].userData = { type: 'plant', plantId: 'snake', greenhouse: 'House Plants' };
+  group.children[0].userData.clickable = true;
+  interactables.push(group.children[0]);
+
+  return group;
+}
+
+function buildPothos() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x5a9a3a, roughness: 0.7, side: THREE.DoubleSide });
+
+  // Trailing vines
+  for (let i = 0; i < 5; i++) {
+    const angle = (i / 5) * Math.PI * 2;
+    const vineLen = 0.4 + Math.random() * 0.4;
+    for (let j = 0; j < 4; j++) {
+      const leaf = new THREE.Mesh(
+        new THREE.CircleGeometry(0.06 + Math.random() * 0.03, 6),
+        mat
+      );
+      leaf.position.set(
+        Math.cos(angle) * (0.15 + j * vineLen / 4),
+        -j * vineLen / 4,
+        Math.sin(angle) * (0.15 + j * vineLen / 4)
+      );
+      leaf.rotation.x = -0.3;
+      group.add(leaf);
+    }
+  }
+
+  group.children[0].userData = { type: 'plant', plantId: 'pothos', greenhouse: 'House Plants' };
+  group.children[0].userData.clickable = true;
+  interactables.push(group.children[0]);
+
+  return group;
+}
+
+function buildFiddleLeafFig() {
+  const group = new THREE.Group();
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.9 });
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x2a6a1a, roughness: 0.7, side: THREE.DoubleSide });
+
+  // Trunk
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.08, 2, 8),
+    trunkMat
+  );
+  trunk.position.y = 1;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // Large violin-shaped leaves
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const leaf = new THREE.Mesh(
+      new THREE.CircleGeometry(0.25, 8),
+      leafMat
+    );
+    leaf.position.set(
+      Math.cos(angle) * 0.3,
+      1.2 + i * 0.1,
+      Math.sin(angle) * 0.3
+    );
+    leaf.rotation.y = angle;
+    leaf.rotation.x = -0.3;
+    leaf.castShadow = true;
+    group.add(leaf);
+  }
+
+  trunk.userData = { type: 'plant', plantId: 'fiddle', greenhouse: 'House Plants' };
+  trunk.userData.clickable = true;
+  interactables.push(trunk);
+
+  return group;
+}
+
+function buildPeaceLily() {
+  const group = new THREE.Group();
+  const leafMat = new THREE.MeshStandardMaterial({ color: 0x3a7a2a, roughness: 0.6, side: THREE.DoubleSide });
+  const flowerMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee, roughness: 0.4 });
+
+  // Leaves
+  for (let i = 0; i < 6; i++) {
+    const angle = (i / 6) * Math.PI * 2;
+    const leaf = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.15, 0.6),
+      leafMat
+    );
+    leaf.position.set(
+      Math.cos(angle) * 0.2,
+      0.3,
+      Math.sin(angle) * 0.2
+    );
+    leaf.rotation.y = angle;
+    leaf.rotation.x = 0.4;
+    leaf.castShadow = true;
+    group.add(leaf);
+  }
+
+  // White spathes
+  const spadix = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.02, 0.02, 0.2, 6),
+    new THREE.MeshStandardMaterial({ color: 0xffffcc, roughness: 0.5 })
+  );
+  spadix.position.y = 0.5;
+  group.add(spadix);
+
+  const spathe = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.12, 0.25),
+    flowerMat
+  );
+  spathe.position.set(0, 0.45, 0.06);
+  spathe.rotation.x = -0.2;
+  group.add(spathe);
+
+  group.children[0].userData = { type: 'plant', plantId: 'peace_lily', greenhouse: 'House Plants' };
+  group.children[0].userData.clickable = true;
+  interactables.push(group.children[0]);
+
+  return group;
+}
+
+function buildSpiderPlant() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x6aaa3a, roughness: 0.7, side: THREE.DoubleSide });
+
+  // Central rosette
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2;
+    const leaf = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.04, 0.5),
+      mat
+    );
+    leaf.position.set(
+      Math.cos(angle) * 0.15,
+      0.25,
+      Math.sin(angle) * 0.15
+    );
+    leaf.rotation.y = angle;
+    leaf.rotation.x = 0.5;
+    leaf.castShadow = true;
+    group.add(leaf);
+  }
+
+  // Baby plantlets on runners
+  for (let i = 0; i < 3; i++) {
+    const angle = (i / 3) * Math.PI * 2;
+    const dist = 0.4 + Math.random() * 0.2;
+    const baby = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05, 6, 6),
+      mat
+    );
+    baby.position.set(
+      Math.cos(angle) * dist,
+      0.3 - i * 0.05,
+      Math.sin(angle) * dist
+    );
+    group.add(baby);
+  }
+
+  group.children[0].userData = { type: 'plant', plantId: 'spider', greenhouse: 'House Plants' };
+  group.children[0].userData.clickable = true;
+  interactables.push(group.children[0]);
+
+  return group;
+}
+
+function buildSucculent() {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color: 0x7aba5a, roughness: 0.6 });
+
+  // Rosette shape
+  for (let ring = 0; ring < 3; ring++) {
+    const count = 6 + ring * 4;
+    const radius = 0.1 + ring * 0.06;
+    for (let i = 0; i < count; i++) {
+      const angle = (i / count) * Math.PI * 2;
+      const leaf = new THREE.Mesh(
+        new THREE.SphereGeometry(0.04, 6, 4),
+        mat
+      );
+      leaf.scale.set(1, 0.5, 1.5);
+      leaf.position.set(
+        Math.cos(angle) * radius,
+        0.05 + ring * 0.03,
+        Math.sin(angle) * radius
+      );
+      leaf.rotation.z = Math.cos(angle) * 0.3;
+      leaf.rotation.x = -Math.sin(angle) * 0.3;
+      group.add(leaf);
+    }
+  }
+
+  group.children[0].userData = { type: 'plant', plantId: 'succulent', greenhouse: 'House Plants' };
+  group.children[0].userData.clickable = true;
+  interactables.push(group.children[0]);
+
+  return group;
+}
+
+// ─── BONSAI PLANTS ───────────────────────────────────
+function buildBonsaiPlants(group, cx, cz) {
+  // Display tables
+  const tablePositions = [
+    [-4, -5], [4, -5], [-4, 3], [4, 3], [0, -8],
+  ];
+  tablePositions.forEach(([tx, tz], i) => {
+    const table = buildBonsaiTable();
+    table.position.set(tx, 0, tz);
+    group.add(table);
+
+    // Place a bonsai on each table
+    const bonsaiTypes = ['juniper', 'pine_bonsai', 'maple', 'ficus_bonsai', 'jade'];
+    const bonsai = buildBonsai(bonsaiTypes[i % bonsaiTypes.length]);
+    bonsai.position.set(tx, 0.75, tz);
+    group.add(bonsai);
+  });
+
+  // Jin technique display (deadwood art)
+  const jin = buildJinBonsai();
+  jin.position.set(0, 0, 6);
+  group.add(jin);
+
+  // Zen garden area
+  buildZenGarden(group);
+
+  // Stone lantern
+  const lantern = buildStoneLantern();
+  lantern.position.set(-5, 0, -8);
+  group.add(lantern);
+
+  // Raked gravel lines on floor (decorative)
+  const lineMat = new THREE.MeshStandardMaterial({ color: 0xbab0a0, roughness: 0.95 });
+  for (let i = 0; i < 6; i++) {
+    const line = new THREE.Mesh(
+      new THREE.BoxGeometry(GH_W - 4, 0.01, 0.02),
+      lineMat
+    );
+    line.position.set(0, 0.08, -3 + i * 1.5);
+    group.add(line);
+  }
+}
+
+function buildBonsaiTable() {
+  const group = new THREE.Group();
+  const mat = MAT.stone;
+
+  // Table top
+  const top = new THREE.Mesh(
+    new THREE.BoxGeometry(1.2, 0.08, 1.2),
+    mat
+  );
+  top.position.y = 0.75;
+  top.castShadow = true;
+  top.receiveShadow = true;
+  group.add(top);
+
+  // Legs
+  const legGeo = new THREE.BoxGeometry(0.08, 0.75, 0.08);
+  [[-0.5, -0.5], [-0.5, 0.5], [0.5, -0.5], [0.5, 0.5]].forEach(([lx, lz]) => {
+    const leg = new THREE.Mesh(legGeo, mat);
+    leg.position.set(lx, 0.375, lz);
+    leg.castShadow = true;
+    group.add(leg);
+  });
+
+  return group;
+}
+
+function buildBonsai(type) {
+  const group = new THREE.Group();
+
+  switch (type) {
+    case 'juniper':
+    case 'pine_bonsai': {
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.9 });
+      const foliageMat = new THREE.MeshStandardMaterial({
+        color: type === 'pine_bonsai' ? 0x2a5a2a : 0x3a6a3a,
+        roughness: 0.8
+      });
+
+      // Curved trunk
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.03, 0.06, 0.3, 8),
+        trunkMat
+      );
+      trunk.position.y = 0.15;
+      trunk.rotation.z = 0.15;
+      trunk.castShadow = true;
+      group.add(trunk);
+
+      // Foliage pads
+      const padPositions = [
+        [0.05, 0.32, 0], [-0.08, 0.25, 0.05], [0.1, 0.22, -0.05],
+        [-0.05, 0.35, -0.06], [0.06, 0.28, 0.08],
+      ];
+      padPositions.forEach(([px, py, pz]) => {
+        const pad = new THREE.Mesh(
+          new THREE.SphereGeometry(0.06 + Math.random() * 0.04, 8, 6),
+          foliageMat
+        );
+        pad.position.set(px, py, pz);
+        pad.scale.y = 0.6;
+        pad.castShadow = true;
+        group.add(pad);
+      });
+      break;
+    }
+    case 'maple': {
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a3a3a, roughness: 0.9 });
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x8a4a2a, roughness: 0.7, side: THREE.DoubleSide });
+
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.02, 0.05, 0.25, 8),
+        trunkMat
+      );
+      trunk.position.y = 0.125;
+      trunk.rotation.z = 0.1;
+      trunk.castShadow = true;
+      group.add(trunk);
+
+      // Delicate leaf clusters
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2;
+        const cluster = new THREE.Mesh(
+          new THREE.SphereGeometry(0.07, 8, 6),
+          leafMat
+        );
+        cluster.position.set(
+          Math.cos(angle) * 0.12,
+          0.25 + Math.random() * 0.05,
+          Math.sin(angle) * 0.12
+        );
+        cluster.scale.y = 0.5;
+        cluster.castShadow = true;
+        group.add(cluster);
+      }
+      break;
+    }
+    case 'ficus_bonsai': {
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a5a4a, roughness: 0.8 });
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x2a5a1a, roughness: 0.6, side: THREE.DoubleSide });
+
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.04, 0.06, 0.35, 8),
+        trunkMat
+      );
+      trunk.position.y = 0.175;
+      trunk.castShadow = true;
+      group.add(trunk);
+
+      // Dense leaf canopy
+      for (let i = 0; i < 10; i++) {
+        const leaf = new THREE.Mesh(
+          new THREE.CircleGeometry(0.04, 6),
+          leafMat
+        );
+        const a = Math.random() * Math.PI * 2;
+        const r = 0.05 + Math.random() * 0.12;
+        leaf.position.set(
+          Math.cos(a) * r,
+          0.3 + Math.random() * 0.08,
+          Math.sin(a) * r
+        );
+        leaf.rotation.x = -Math.PI / 4;
+        leaf.rotation.y = a;
+        group.add(leaf);
+      }
+      break;
+    }
+    case 'jade': {
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6a6a5a, roughness: 0.7 });
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x4a8a4a, roughness: 0.5 });
+
+      const trunk = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.05, 0.08, 0.25, 8),
+        trunkMat
+      );
+      trunk.position.y = 0.125;
+      trunk.castShadow = true;
+      group.add(trunk);
+
+      // Jade leaves (thick and round)
+      for (let i = 0; i < 8; i++) {
+        const leaf = new THREE.Mesh(
+          new THREE.SphereGeometry(0.03, 6, 4),
+          leafMat
+        );
+        leaf.scale.set(1.5, 0.6, 1.5);
+        const a = Math.random() * Math.PI * 2;
+        leaf.position.set(
+          Math.cos(a) * 0.1,
+          0.25 + Math.random() * 0.06,
+          Math.sin(a) * 0.1
+        );
+        group.add(leaf);
+      }
+      break;
+    }
+  }
+
+  // Small pot
+  const pot = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.08, 0.06, 12),
+    new THREE.MeshStandardMaterial({ color: 0x3a3a3a, roughness: 0.8 })
+  );
+  pot.position.y = 0.03;
+  group.add(pot);
+
+  // Make clickable
+  const firstMesh = group.children.find(c => c.isMesh);
+  if (firstMesh) {
+    firstMesh.userData = { type: 'plant', plantId: type, greenhouse: 'Bonsai' };
+    firstMesh.userData.clickable = true;
+    interactables.push(firstMesh);
+  }
+
+  return group;
+}
+
+function buildJinBonsai() {
+  const group = new THREE.Group();
+  const deadwoodMat = new THREE.MeshStandardMaterial({ color: 0xd4c4a4, roughness: 0.9 });
+  const livingMat = new THREE.MeshStandardMaterial({ color: 0x3a6a3a, roughness: 0.8 });
+
+  // Deadwood trunk
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.07, 0.5, 8),
+    deadwoodMat
+  );
+  trunk.position.y = 0.25;
+  trunk.rotation.z = 0.2;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // Jin branch (stripped bark)
+  const jinBranch = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.015, 0.025, 0.3, 6),
+    deadwoodMat
+  );
+  jinBranch.position.set(0.05, 0.4, 0);
+  jinBranch.rotation.z = -0.6;
+  group.add(jinBranch);
+
+  // Living foliage at top
+  const foliage = new THREE.Mesh(
+    new THREE.SphereGeometry(0.08, 8, 6),
+    livingMat
+  );
+  foliage.position.set(0, 0.52, 0);
+  foliage.scale.y = 0.7;
+  foliage.castShadow = true;
+  group.add(foliage);
+
+  // Pot
+  const pot = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.09, 0.07, 12),
+    new THREE.MeshStandardMaterial({ color: 0x2a2a2a, roughness: 0.8 })
+  );
+  pot.position.y = 0.035;
+  group.add(pot);
+
+  trunk.userData = { type: 'plant', plantId: 'jin_bonsai', greenhouse: 'Bonsai' };
+  trunk.userData.clickable = true;
+  interactables.push(trunk);
+
+  return group;
+}
+
+function buildZenGarden(group) {
+  // Gravel area
+  const gravelMat = new THREE.MeshStandardMaterial({ color: 0xc8c0b0, roughness: 0.95 });
+  const gravel = new THREE.Mesh(
+    new THREE.PlaneGeometry(4, 3),
+    gravelMat
+  );
+  gravel.rotation.x = -Math.PI / 2;
+  gravel.position.set(0, 0.06, -GH_D / 2 + 2.5);
+  gravel.receiveShadow = true;
+  group.add(gravel);
+
+  // Rocks in zen garden
+  const rockPositions = [
+    { x: -0.8, z: -GH_D / 2 + 2, s: 0.3 },
+    { x: 0.5, z: -GH_D / 2 + 3, s: 0.2 },
+    { x: 1.2, z: -GH_D / 2 + 2.2, s: 0.25 },
+  ];
+  rockPositions.forEach(r => {
+    const rock = new THREE.Mesh(
+      new THREE.DodecahedronGeometry(r.s, 1),
+      MAT.stone
+    );
+    rock.position.set(r.x, r.s * 0.4, r.z);
+    rock.rotation.set(Math.random(), Math.random(), 0);
+    rock.castShadow = true;
+    group.add(rock);
+  });
+}
+
+function buildStoneLantern() {
+  const group = new THREE.Group();
+  const mat = MAT.stone;
+
+  // Base
+  const base = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.2, 0.25, 0.15, 8),
+    mat
+  );
+  base.position.y = 0.075;
+  group.add(base);
+
+  // Pillar
+  const pillar = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 0.6, 8),
+    mat
+  );
+  pillar.position.y = 0.45;
+  pillar.castShadow = true;
+  group.add(pillar);
+
+  // Light box
+  const box = new THREE.Mesh(
+    new THREE.BoxGeometry(0.3, 0.25, 0.3),
+    mat
+  );
+  box.position.y = 0.87;
+  box.castShadow = true;
+  group.add(box);
+
+  // Light inside
+  const lightPanel = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.15, 0.15),
+    new THREE.MeshBasicMaterial({ color: 0xffeedd })
+  );
+  lightPanel.position.set(0, 0.87, 0.155);
+  group.add(lightPanel);
+
+  // Roof
+  const roof = new THREE.Mesh(
+    new THREE.ConeGeometry(0.3, 0.2, 4),
+    mat
+  );
+  roof.position.y = 1.07;
+  roof.rotation.y = Math.PI / 4;
+  group.add(roof);
+
+  // Small point light
+  const lanternLight = new THREE.PointLight(0xffddaa, 0.3, 5);
+  lanternLight.position.y = 0.87;
+  group.add(lanternLight);
+
+  return group;
+}
+
+// ─── DECORATIVE ELEMENTS ─────────────────────────────
+function buildBush(x, y, z, scale) {
+  const group = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0x3a6a2a).lerp(new THREE.Color(0x5a8a3a), Math.random()),
+    roughness: 0.9,
+  });
+
+  const count = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    const s = scale * (0.5 + Math.random() * 0.5);
+    const bush = new THREE.Mesh(
+      new THREE.SphereGeometry(s, 8, 6),
+      mat
+    );
+    bush.position.set(
+      (Math.random() - 0.5) * scale * 0.5,
+      s * 0.7,
+      (Math.random() - 0.5) * scale * 0.5
+    );
+    bush.scale.y = 0.7;
+    bush.castShadow = true;
+    group.add(bush);
+  }
+
+  group.position.set(x, y, z);
+  scene.add(group);
+}
+
+function buildTree(x, y, z) {
+  const group = new THREE.Group();
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5a3a2a, roughness: 0.9 });
+
+  // Trunk
+  const trunkH = 2 + Math.random() * 2;
+  const trunk = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.15, trunkH, 8),
+    trunkMat
+  );
+  trunk.position.y = trunkH / 2;
+  trunk.castShadow = true;
+  group.add(trunk);
+
+  // Canopy
+  const canopyMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(0x2a5a1a).lerp(new THREE.Color(0x4a8a2a), Math.random()),
+    roughness: 0.9,
+  });
+  const canopyS = 1 + Math.random() * 1;
+  const canopy = new THREE.Mesh(
+    new THREE.SphereGeometry(canopyS, 8, 6),
+    canopyMat
+  );
+  canopy.position.y = trunkH + canopyS * 0.5;
+  canopy.scale.y = 0.7;
+  canopy.castShadow = true;
+  group.add(canopy);
+
+  group.position.set(x, y, z);
+  scene.add(group);
+}
+
+// ─── COLLISION ───────────────────────────────────────
+function checkCollision(newX, newZ) {
+  for (const wall of wallSegments) {
+    // Find closest point on wall box to player center
+    const closestX = Math.max(wall.minX, Math.min(newX, wall.maxX));
+    const closestZ = Math.max(wall.minZ, Math.min(newZ, wall.maxZ));
+
+    const dx = newX - closestX;
+    const dz = newZ - closestZ;
+    const distSq = dx * dx + dz * dz;
+
+    if (distSq < PLAYER_R * PLAYER_R) {
+      // Check if player height overlaps with wall height
+      if (playerPos.y - 0.2 < wall.maxY && playerPos.y > wall.minY) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function resolveCollision(newX, newZ) {
+  // Try to resolve by pushing player out of collision
+  for (const wall of wallSegments) {
+    const closestX = Math.max(wall.minX, Math.min(newX, wall.maxX));
+    const closestZ = Math.max(wall.minZ, Math.min(newZ, wall.maxZ));
+
+    const dx = newX - closestX;
+    const dz = newZ - closestZ;
+    const distSq = dx * dx + dz * dz;
+
+    if (distSq < PLAYER_R * PLAYER_R && distSq > 0.0001) {
+      if (playerPos.y - 0.2 < wall.maxY && playerPos.y > wall.minY) {
+        const dist = Math.sqrt(distSq);
+        const overlap = PLAYER_R - dist;
+        const nx = dx / dist;
+        const nz = dz / dist;
+
+        // Push out
+        newX += nx * overlap;
+        newZ += nz * overlap;
+      }
+    }
+  }
+  return { x: newX, z: newZ };
+}
+
+// ─── INTERACTION ─────────────────────────────────────
+function updateInteraction() {
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObjects(interactables, true);
+
+  const crosshair = document.getElementById('crosshair');
+  const interactLabel = document.getElementById('interact-label');
+
+  if (intersects.length > 0 && intersects[0].distance < 5) {
+    const obj = intersects[0].object;
+    hoveredObj = obj;
+    crosshair.classList.add('hovering');
+
+    if (obj.userData.type === 'plant' && obj.userData.plantId) {
+      const info = PLANT_INFO[obj.userData.plantId];
+      if (info) {
+        interactLabel.style.display = 'block';
+        interactLabel.textContent = `Click to learn about ${info.name}`;
+      }
+    } else if (obj.userData.type === 'door') {
+      const state = doorStates[obj.userData.greenhouse];
+      const doorText = state && state.open ? 'Click to close door' : 'Click to open door';
+      interactLabel.style.display = 'block';
+      interactLabel.textContent = doorText;
+    } else if (obj.userData.type === 'sign') {
+      interactLabel.style.display = 'none';
+    }
+  } else {
+    hoveredObj = null;
+    crosshair.classList.remove('hovering');
+    interactLabel.style.display = 'none';
+  }
+}
+
+function handleInteraction() {
+  if (!hoveredObj) return;
+
+  const obj = hoveredObj;
+  if (obj.userData.type === 'plant' && obj.userData.plantId) {
+    const info = PLANT_INFO[obj.userData.plantId];
+    if (info) {
+      showPopup(info.name, info.desc);
+    }
+  } else if (obj.userData.type === 'door') {
+    toggleDoor(obj.userData.greenhouse);
+  }
+}
+
+function showPopup(title, body) {
+  const popup = document.getElementById('info-popup');
+  document.getElementById('popup-title').textContent = title;
+  document.getElementById('popup-body').textContent = body;
+  popup.style.display = 'block';
+
+  // Auto-hide after 6 seconds
+  clearTimeout(popup._timeout);
+  popup._timeout = setTimeout(() => {
+    popup.style.display = 'none';
+  }, 6000);
+}
+
+function hidePopup() {
+  document.getElementById('info-popup').style.display = 'none';
+}
+
+// ─── ZONE DETECTION ──────────────────────────────────
+function updateZone() {
+  const x = camera.position.x;
+  const z = camera.position.z;
+
+  // Check if inside a greenhouse
+  if (z < -GH_D / 2 + 1 || z > GH_D / 2 - 1) {
+    currentZone = 'Entrance';
+  } else {
+    if (x < -12) currentZone = 'Desert Greenhouse';
+    else if (x < 8) currentZone = 'Jungle Greenhouse';
+    else if (x < 28) currentZone = 'House Plants Greenhouse';
+    else currentZone = 'Bonsai Greenhouse';
+  }
+
+  document.getElementById('zone-label').textContent = currentZone;
+}
+
+// ─── MINIMAP ─────────────────────────────────────────
+function setupMinimap() {
+  minimapCanvas = document.getElementById('minimap');
+  minimapCanvas.width = 180;
+  minimapCanvas.height = 180;
+  minimapCtx = minimapCanvas.getContext('2d');
+}
+
+function drawMinimap() {
+  if (!minimapVisible) {
+    minimapCanvas.style.display = 'none';
+    return;
+  }
+  minimapCanvas.style.display = 'block';
+
+  const ctx = minimapCtx;
+  const w = 180, h = 180;
+  const scale = 1.5; // pixels per world unit
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Background
+  ctx.fillStyle = 'rgba(20, 40, 20, 0.7)';
+  ctx.fillRect(0, 0, w, h);
+
+  // Center of minimap is world center
+  const cx = w / 2;
+  const cy = h / 2;
+
+  // Draw greenhouses
+  const ghPositions = [
+    { x: -22, label: 'Desert', color: '#c8a050' },
+    { x: -2, label: 'Jungle', color: '#3a8a2a' },
+    { x: 18, label: 'House', color: '#7a7a6a' },
+    { x: 38, label: 'Bonsai', color: '#8a7a6a' },
+  ];
+
+  ghPositions.forEach(gh => {
+    const mx = cx + gh.x * scale;
+    const my = cy + 0 * scale;
+
+    ctx.fillStyle = gh.color + '40';
+    ctx.strokeStyle = gh.color;
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(mx - GH_W * scale / 2, my - GH_D * scale / 2, GH_W * scale, GH_D * scale);
+    ctx.strokeRect(mx - GH_W * scale / 2, my - GH_D * scale / 2, GH_W * scale, GH_D * scale);
+
+    // Label
+    ctx.fillStyle = gh.color;
+    ctx.font = '8px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(gh.label, mx, my - GH_D * scale / 2 - 3);
+  });
+
+  // Draw tunnels
+  ctx.strokeStyle = '#66666640';
+  ctx.lineWidth = 1;
+  for (let i = 0; i < ghPositions.length - 1; i++) {
+    const x1 = cx + (ghPositions[i].x + GH_W / 2) * scale;
+    const x2 = cx + (ghPositions[i + 1].x - GH_W / 2) * scale;
+    ctx.fillStyle = '#44444430';
+    ctx.fillRect(x1, cy - GH_D * scale / 2, x2 - x1, GH_D * scale);
+  }
+
+  // Player position and direction
+  const px = cx + camera.position.x * scale;
+  const py = cy + camera.position.z * scale;
+
+  // Direction indicator
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  const dirLen = 12;
+
+  ctx.strokeStyle = '#ffd65a';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px + dir.x * dirLen, py + dir.z * dirLen);
+  ctx.stroke();
+
+  // Player dot
+  ctx.fillStyle = '#ffd65a';
+  ctx.beginPath();
+  ctx.arc(px, py, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Border
+  ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0, 0, w, h);
+}
+
+// ─── EVENTS ──────────────────────────────────────────
+function setupEvents() {
+  // Start button
+  const blocker = document.getElementById('blocker');
+  const startBtn = document.getElementById('start-btn');
+
+  startBtn.addEventListener('click', () => {
+    controls.lock();
+  });
+  blocker.addEventListener('click', (e) => {
+    if (e.target !== startBtn) controls.lock();
+  });
+
+  controls.addEventListener('lock', () => {
+    blocker.classList.add('hidden');
+  });
+  controls.addEventListener('unlock', () => {
+    blocker.classList.remove('hidden');
+  });
+
+  // Keyboard
+  document.addEventListener('keydown', (e) => {
+    switch (e.code) {
+      case 'KeyW': case 'ArrowUp': moveF = true; break;
+      case 'KeyS': case 'ArrowDown': moveB = true; break;
+      case 'KeyA': case 'ArrowLeft': moveL = true; break;
+      case 'KeyD': case 'ArrowRight': moveR = true; break;
+      case 'ShiftLeft': case 'ShiftRight': isRunning = true; break;
+      case 'Space':
+        if (canJump) {
+          velocity.y = JUMP_VEL;
+          canJump = false;
+        }
+        break;
+      case 'KeyE': handleInteraction(); break;
+      case 'KeyM': minimapVisible = !minimapVisible; break;
+    }
+  });
+
+  document.addEventListener('keyup', (e) => {
+    switch (e.code) {
+      case 'KeyW': case 'ArrowUp': moveF = false; break;
+      case 'KeyS': case 'ArrowDown': moveB = false; break;
+      case 'KeyA': case 'ArrowLeft': moveL = false; break;
+      case 'KeyD': case 'ArrowRight': moveR = false; break;
+      case 'ShiftLeft': case 'ShiftRight': isRunning = false; break;
+    }
+  });
+
+  // Click interaction
+  document.addEventListener('mousedown', (e) => {
+    if (controls.isLocked && e.button === 0) {
+      handleInteraction();
+    }
+  });
+
+  // Close popup
+  document.querySelector('#info-popup .close-btn').addEventListener('click', hidePopup);
+
+  // Resize
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+}
+
+// ─── ANIMATION LOOP ──────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+
+  const delta = Math.min(clock.getDelta(), 0.1);
+
+  if (controls.isLocked) {
+    // Movement
+    const speed = isRunning ? RUN_SPEED : WALK_SPEED;
+    const direction = new THREE.Vector3();
+
+    if (moveF) direction.z -= 1;
+    if (moveB) direction.z += 1;
+    if (moveL) direction.x -= 1;
+    if (moveR) direction.x += 1;
+
+    direction.normalize();
+
+    // Apply camera rotation to movement direction
+    const euler = new THREE.Euler(0, camera.rotation.y, 0, 'YXZ');
+    direction.applyEuler(euler);
+
+    // Horizontal movement
+    velocity.x = direction.x * speed;
+    velocity.z = direction.z * speed;
+
+    // Gravity
+    velocity.y -= GRAVITY * delta;
+
+    // Calculate new position
+    let newX = camera.position.x + velocity.x * delta;
+    let newZ = camera.position.z + velocity.z * delta;
+    let newY = camera.position.y + velocity.y * delta;
+
+    // Ground collision
+    if (newY < PLAYER_H) {
+      newY = PLAYER_H;
+      velocity.y = 0;
+      canJump = true;
+    }
+
+    // Wall collision with resolution
+    const resolved = resolveCollision(newX, newZ);
+    newX = resolved.x;
+    newZ = resolved.z;
+
+    // Keep player in bounds
+    newX = Math.max(-90, Math.min(90, newX));
+    newZ = Math.max(-90, Math.min(90, newZ));
+
+    camera.position.set(newX, newY, newZ);
+
+    // Update interaction
+    updateInteraction();
+    updateZone();
+  }
+
+  // Draw minimap
+  drawMinimap();
+
+  // Debug info
+  document.getElementById('debug').textContent =
+    `${camera.position.x.toFixed(1)}, ${camera.position.z.toFixed(1)} | ${currentZone}`;
+
+  renderer.render(scene, camera);
+}
+
+// ─── START ───────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
